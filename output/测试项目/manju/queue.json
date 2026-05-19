@@ -1,0 +1,10 @@
+[
+  {
+    "id": "batch_1",
+    "start_chapter": 1,
+    "end_chapter": 2,
+    "status": "done",
+    "attempts": 3,
+    "updated_at": "2026-05-19T00:38:58"
+  }
+]

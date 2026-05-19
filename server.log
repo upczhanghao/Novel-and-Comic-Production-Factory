@@ -1,0 +1,11 @@
+2026-05-19 19:51:03,090 - INFO - Serving frontend from /Users/zhanghao/Desktop/NovelWriter_public-main/frontend/dist
+INFO:     Started server process [17199]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+2026-05-19 19:51:15,161 - INFO - Preset '网络小说' loaded and activated.
+INFO:     127.0.0.1:55828 - "GET /api/config/image HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [17199]

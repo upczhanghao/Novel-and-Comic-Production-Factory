@@ -1,0 +1,865 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { manjuApi, postSSE, type SSEHandle } from '@/api/client'
+import { useConfigStore } from '@/stores/config'
+import { useProjectStore } from '@/stores/project'
+import StreamOutput from '@/components/StreamOutput.vue'
+
+type ChapterInfo = {
+  num: number
+  title: string
+  chars: number
+  content?: string
+}
+
+type StepState = {
+  running: boolean
+  progress: string
+  result: string
+  error: string
+  progressValue?: number
+  sseHandle?: SSEHandle | null
+}
+
+type ManjuSettings = {
+  llm_config_name: string
+  start_chapter: number
+  end_chapter: number
+  shots_per_chapter: number
+  visual_style: string
+  extra_guidance: string
+}
+
+type CharacterCard = {
+  id: string
+  name: string
+  locked: boolean
+  identity?: string
+  appearance?: string
+  costume?: string
+  prompt_positive?: string
+  prompt_negative?: string
+  [key: string]: unknown
+}
+
+type StoryboardShot = {
+  id: string
+  chapter_num: number
+  shot_no: number
+  locked: boolean
+  subject?: string
+  characters?: string
+  location?: string
+  light?: string
+  prompt_positive?: string
+  prompt_negative?: string
+  continuity?: string
+  image_path?: string
+  image_url?: string
+  image_download_url?: string
+  [key: string]: unknown
+}
+
+type StyleTemplate = {
+  name: string
+  visual_style: string
+  extra_guidance: string
+}
+
+const mkState = (): StepState => ({
+  running: false,
+  progress: '',
+  result: '',
+  error: '',
+  progressValue: undefined,
+  sseHandle: null,
+})
+
+const configStore = useConfigStore()
+const projectStore = useProjectStore()
+
+const llmConfig = ref('')
+const file = ref<File | null>(null)
+const importing = ref(false)
+const importMsg = ref('')
+const chapters = ref<ChapterInfo[]>([])
+const meta = ref<Record<string, unknown> | null>(null)
+const startChapter = ref(1)
+const endChapter = ref(1)
+const shotsPerChapter = ref(12)
+const visualStyle = ref('国漫竖屏短剧，电影级构图，统一角色设定，高细节，适合文生图')
+const extraGuidance = ref('')
+const savingSettings = ref(false)
+const settingsMsg = ref('')
+const appliedSettings = ref<ManjuSettings | null>(null)
+
+const characters = ref(mkState())
+const scenes = ref(mkState())
+const storyboards = ref(mkState())
+const scriptAdapt = ref(mkState())
+const characterCards = ref<CharacterCard[]>([])
+const storyboardShots = ref<StoryboardShot[]>([])
+const styleTemplates = ref<StyleTemplate[]>([])
+const selectedStyle = ref('')
+const dataMsg = ref('')
+const continuityIssues = ref<Array<Record<string, unknown>>>([])
+const statsRows = ref<Array<{ name: string; count: number }>>([])
+const relationRows = ref<Array<{ source: string; target: string; count: number }>>([])
+const queueRows = ref<Array<Record<string, unknown>>>([])
+const generatingImageIds = ref<Set<string>>(new Set())
+const selectedImageConfig = ref('')
+const scriptTargetChapters = ref(12)
+const scriptRenameCharacters = ref(false)
+const scriptAdaptationLevel = ref('中度改编')
+const scriptEpisodeDuration = ref('3-5分钟')
+const scriptStyle = ref('竖屏漫剧，强钩子，快节奏，适合后续分镜和AI绘图')
+const scriptGuidance = ref('')
+
+const filepath = computed(() => projectStore.filepath)
+const chapterOptions = computed(() => chapters.value.map((c) => ({ value: c.num, label: `第${c.num}章 ${c.title}` })))
+const currentSettings = computed<ManjuSettings>(() => ({
+  llm_config_name: llmConfig.value,
+  start_chapter: startChapter.value,
+  end_chapter: endChapter.value,
+  shots_per_chapter: shotsPerChapter.value,
+  visual_style: visualStyle.value,
+  extra_guidance: extraGuidance.value,
+}))
+const settingsDirty = computed(() => JSON.stringify(currentSettings.value) !== JSON.stringify(appliedSettings.value))
+const canGenerate = computed(() => Boolean(llmConfig.value && chapters.value.length && appliedSettings.value && !settingsDirty.value))
+
+function onFileChange(e: Event) {
+  file.value = (e.target as HTMLInputElement).files?.[0] ?? null
+}
+
+async function loadStatus() {
+  try {
+    const res = await manjuApi.status(filepath.value)
+    meta.value = res.data.meta
+    chapters.value = res.data.chapters ?? []
+    characters.value.result = res.data.characters ?? ''
+    scriptAdapt.value.result = res.data.script ?? ''
+    scenes.value.result = res.data.scenes ?? ''
+    storyboards.value.result = res.data.storyboards ?? ''
+    characterCards.value = res.data.character_cards ?? []
+    storyboardShots.value = res.data.storyboard_shots ?? []
+    styleTemplates.value = res.data.style_templates ?? []
+    queueRows.value = res.data.queue ?? []
+    const saved = res.data.settings as Partial<ManjuSettings> | undefined
+    if (chapters.value.length) {
+      startChapter.value = saved?.start_chapter ?? Math.min(startChapter.value || 1, chapters.value.length)
+      endChapter.value = saved?.end_chapter ?? chapters.value.length
+    }
+    if (saved) {
+      if (saved.llm_config_name) llmConfig.value = saved.llm_config_name
+      shotsPerChapter.value = saved.shots_per_chapter ?? shotsPerChapter.value
+      visualStyle.value = saved.visual_style ?? visualStyle.value
+      extraGuidance.value = saved.extra_guidance ?? extraGuidance.value
+      appliedSettings.value = { ...currentSettings.value }
+      settingsMsg.value = ''
+    }
+  } catch {
+    // ignore empty state
+  }
+}
+
+async function importNovel() {
+  if (!file.value) return
+  importing.value = true
+  importMsg.value = ''
+  try {
+    const fd = new FormData()
+    fd.append('filepath', filepath.value)
+    fd.append('file', file.value)
+    const res = await manjuApi.importNovel(fd)
+    meta.value = res.data.meta
+    chapters.value = res.data.chapters ?? []
+    startChapter.value = 1
+    endChapter.value = chapters.value.length || 1
+    importMsg.value = res.data.message
+    appliedSettings.value = null
+    settingsMsg.value = '请先保存左侧设置后再生成'
+    characterCards.value = []
+    storyboardShots.value = []
+  } catch (e: unknown) {
+    importMsg.value = `❌ ${(e as Error).message}`
+  } finally {
+    importing.value = false
+  }
+}
+
+async function saveSettings() {
+  if (!chapters.value.length) {
+    settingsMsg.value = '❌ 请先导入小说 TXT'
+    return
+  }
+  if (startChapter.value > endChapter.value) {
+    settingsMsg.value = '❌ 起始章节不能大于结束章节'
+    return
+  }
+  savingSettings.value = true
+  settingsMsg.value = ''
+  try {
+    const res = await manjuApi.saveSettings({
+      filepath: filepath.value,
+      ...currentSettings.value,
+    })
+    const saved = res.data.settings as ManjuSettings
+    llmConfig.value = saved.llm_config_name || llmConfig.value
+    startChapter.value = saved.start_chapter
+    endChapter.value = saved.end_chapter
+    shotsPerChapter.value = saved.shots_per_chapter
+    visualStyle.value = saved.visual_style
+    extraGuidance.value = saved.extra_guidance
+    appliedSettings.value = { ...currentSettings.value }
+    settingsMsg.value = res.data.message
+  } catch (e: unknown) {
+    settingsMsg.value = `❌ ${(e as Error).message}`
+  } finally {
+    savingSettings.value = false
+  }
+}
+
+function runSSE(state: StepState, url: string, body: Record<string, unknown>, afterDone?: () => void | Promise<void>) {
+  state.running = true
+  state.progress = ''
+  state.error = ''
+  state.progressValue = undefined
+  const refresh = () => {
+    if (afterDone) void afterDone()
+  }
+  const handle = postSSE(
+    url,
+    body,
+    (msg, value, content) => {
+      state.progress = msg
+      if (value !== undefined) state.progressValue = value
+      if (content) state.result = content
+    },
+    (content) => {
+      state.result = content || state.result
+    },
+    (err) => {
+      state.error = err
+      state.running = false
+      refresh()
+    },
+    () => {
+      state.running = false
+      state.sseHandle = null
+      refresh()
+    },
+  )
+  state.sseHandle = handle
+}
+
+function commonBody() {
+  const settings = appliedSettings.value ?? currentSettings.value
+  return {
+    llm_config_name: settings.llm_config_name,
+    filepath: filepath.value,
+    start_chapter: settings.start_chapter,
+    end_chapter: settings.end_chapter,
+    shots_per_chapter: settings.shots_per_chapter,
+    visual_style: settings.visual_style,
+    extra_guidance: settings.extra_guidance,
+  }
+}
+
+function generateCharacters() {
+  runSSE(characters.value, manjuApi.charactersUrl(), commonBody())
+}
+
+function generateScenes() {
+  runSSE(scenes.value, manjuApi.scenesUrl(), commonBody(), loadStatus)
+}
+
+function generateStoryboards() {
+  runSSE(storyboards.value, manjuApi.storyboardsUrl(), commonBody(), loadStatus)
+}
+
+function generateAll() {
+  generateCharacters()
+}
+
+function scriptBody() {
+  const settings = appliedSettings.value ?? currentSettings.value
+  return {
+    llm_config_name: llmConfig.value,
+    filepath: filepath.value,
+    start_chapter: settings.start_chapter,
+    end_chapter: settings.end_chapter,
+    target_chapters: scriptTargetChapters.value,
+    rename_characters: scriptRenameCharacters.value,
+    adaptation_level: scriptAdaptationLevel.value,
+    episode_duration: scriptEpisodeDuration.value,
+    script_style: scriptStyle.value,
+    extra_guidance: scriptGuidance.value,
+  }
+}
+
+function generateScriptAdaptation() {
+  runSSE(scriptAdapt.value, manjuApi.scriptUrl(), scriptBody())
+}
+
+function exportScriptTxt() {
+  window.open(manjuApi.scriptExportUrl(filepath.value), '_blank')
+}
+
+async function refreshStructuredData() {
+  await loadStatus()
+  dataMsg.value = '✅ 制片数据已刷新'
+}
+
+async function saveCharacterCards() {
+  const res = await manjuApi.saveCharacters({ filepath: filepath.value, characters: characterCards.value })
+  characterCards.value = res.data.characters ?? characterCards.value
+  dataMsg.value = res.data.message
+}
+
+async function saveStoryboardShots() {
+  const res = await manjuApi.saveStoryboards({ filepath: filepath.value, shots: storyboardShots.value })
+  storyboardShots.value = res.data.shots ?? storyboardShots.value
+  dataMsg.value = res.data.message
+}
+
+function applyStyleTemplate() {
+  const tpl = styleTemplates.value.find((item) => item.name === selectedStyle.value)
+  if (!tpl) return
+  visualStyle.value = tpl.visual_style
+  extraGuidance.value = tpl.extra_guidance
+}
+
+async function saveCurrentStyle() {
+  const name = selectedStyle.value || `自定义模板 ${styleTemplates.value.length + 1}`
+  const res = await manjuApi.saveStyle({
+    filepath: filepath.value,
+    name,
+    visual_style: visualStyle.value,
+    extra_guidance: extraGuidance.value,
+  })
+  styleTemplates.value = res.data.templates ?? styleTemplates.value
+  selectedStyle.value = name
+  dataMsg.value = res.data.message
+}
+
+function exportAssets(kind: string, format: string) {
+  window.open(manjuApi.exportUrl(kind, format, filepath.value), '_blank')
+}
+
+function exportPromptContent(kind: string, format = 'md') {
+  window.open(manjuApi.exportContentUrl(kind, format, filepath.value), '_blank')
+}
+
+async function importImagePrompts(kind: string) {
+  dataMsg.value = '正在导入图片生成模块...'
+  try {
+    const res = await manjuApi.importImagePrompts({
+      filepath: filepath.value,
+      kind,
+      replace: false,
+    })
+    dataMsg.value = res.data.message
+  } catch (e: unknown) {
+    dataMsg.value = `❌ 导入失败：${(e as Error).message}`
+  }
+}
+
+async function runContinuityCheck() {
+  const res = await manjuApi.continuityCheck(filepath.value)
+  continuityIssues.value = res.data.issues ?? []
+  dataMsg.value = `连续性检查完成：${res.data.issue_count ?? 0} 个提示`
+}
+
+async function loadStats() {
+  const res = await manjuApi.stats(filepath.value)
+  statsRows.value = res.data.appearances ?? []
+  relationRows.value = res.data.relations ?? []
+  dataMsg.value = '✅ 角色统计已刷新'
+}
+
+async function generateShotImage(shot: StoryboardShot) {
+  if (!selectedImageConfig.value) {
+    dataMsg.value = '❌ 请先选择图片生成配置'
+    return
+  }
+  const next = new Set(generatingImageIds.value)
+  next.add(shot.id)
+  generatingImageIds.value = next
+  dataMsg.value = `正在生成图片：第${shot.chapter_num}章 镜${shot.shot_no}`
+  try {
+    const res = await manjuApi.generateImage({
+      filepath: filepath.value,
+      source_type: 'shot',
+      source_id: shot.id,
+      image_config_name: selectedImageConfig.value,
+    })
+    shot.image_path = res.data.path
+    shot.image_url = res.data.url
+    shot.image_download_url = res.data.download_url
+    shot.image_relative_path = res.data.relative_path
+    dataMsg.value = res.data.message
+  } catch (e: unknown) {
+    dataMsg.value = `❌ 图片生成失败：${(e as Error).message}`
+  } finally {
+    const rest = new Set(generatingImageIds.value)
+    rest.delete(shot.id)
+    generatingImageIds.value = rest
+  }
+}
+
+async function regenerateShot(shot: StoryboardShot) {
+  if (shot.locked) return
+  dataMsg.value = `正在重写分镜：第${shot.chapter_num}章 镜${shot.shot_no}`
+  const res = await manjuApi.regenerateShot({
+    filepath: filepath.value,
+    llm_config_name: llmConfig.value,
+    shot_id: shot.id,
+    visual_style: visualStyle.value,
+    extra_guidance: extraGuidance.value,
+  })
+  const updated = res.data.shot as StoryboardShot
+  const idx = storyboardShots.value.findIndex((item) => item.id === updated.id)
+  if (idx >= 0) storyboardShots.value[idx] = updated
+  dataMsg.value = res.data.message
+}
+
+async function createQueue() {
+  const settings = appliedSettings.value ?? currentSettings.value
+  const res = await manjuApi.createQueue({
+    filepath: filepath.value,
+    start_chapter: settings.start_chapter,
+    end_chapter: settings.end_chapter,
+    chunk_size: 5,
+  })
+  queueRows.value = res.data.queue ?? []
+  dataMsg.value = res.data.message
+}
+
+async function updateQueue(batchId: string, status: string) {
+  const res = await manjuApi.updateQueue(batchId, filepath.value, status)
+  queueRows.value = res.data.queue ?? []
+  dataMsg.value = res.data.message
+}
+
+onMounted(async () => {
+  await Promise.all([configStore.loadAll(), projectStore.loadActive()])
+  if (configStore.llmChoices.length) llmConfig.value = configStore.llmChoices[0]
+  if (configStore.imageChoices.length) selectedImageConfig.value = configStore.imageChoices[0]
+  await loadStatus()
+})
+
+watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraGuidance], () => {
+  if (appliedSettings.value && settingsDirty.value) settingsMsg.value = '设置已修改，请点击保存设置后再生成'
+})
+</script>
+
+<template>
+  <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <div class="flex items-center justify-between gap-4 flex-wrap">
+      <h2 class="text-2xl font-bold" style="color: var(--color-ink)">🎬 漫剧制作</h2>
+      <button
+        @click="loadStatus"
+        class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm hover:bg-white transition-colors"
+        type="button"
+      >
+        刷新
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-5">
+      <aside class="space-y-5">
+        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">LLM 配置</label>
+            <select v-model="llmConfig" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
+              <option v-for="c in configStore.llmChoices" :key="c" :value="c">{{ c }}</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">导入小说 TXT</label>
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              @change="onFileChange"
+              class="text-sm text-[var(--color-ink)] file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:cursor-pointer"
+            />
+          </div>
+          <button
+            @click="importNovel"
+            :disabled="importing || !file"
+            class="w-full px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
+            style="background-color: var(--color-leather); color: var(--color-parchment)"
+            type="button"
+          >
+            {{ importing ? '导入中...' : '解析章节目录' }}
+          </button>
+          <div v-if="importMsg" class="text-sm" :class="importMsg.startsWith('✅') ? 'text-green-700' : 'text-red-600'">
+            {{ importMsg }}
+          </div>
+          <div v-if="meta" class="text-xs text-[var(--color-ink-light)] leading-6">
+            <div>章节数：{{ meta.chapter_count }}</div>
+            <div>总字数：{{ meta.total_chars }}</div>
+            <div>文件：{{ meta.filename }}</div>
+          </div>
+        </section>
+
+        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1">起始章节</label>
+              <select v-model.number="startChapter" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
+                <option v-for="c in chapterOptions" :key="c.value" :value="c.value">{{ c.label }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1">结束章节</label>
+              <select v-model.number="endChapter" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
+                <option v-for="c in chapterOptions" :key="c.value" :value="c.value">{{ c.label }}</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">每章分镜数</label>
+            <input v-model.number="shotsPerChapter" type="number" min="1" max="80" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div class="grid grid-cols-[1fr_auto] gap-2 items-end">
+            <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1">美术风格模板</label>
+              <select v-model="selectedStyle" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
+                <option value="">选择模板</option>
+                <option v-for="tpl in styleTemplates" :key="tpl.name" :value="tpl.name">{{ tpl.name }}</option>
+              </select>
+            </div>
+            <button @click="applyStyleTemplate" :disabled="!selectedStyle" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">应用</button>
+          </div>
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">统一视觉风格</label>
+            <textarea v-model="visualStyle" rows="3" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" />
+          </div>
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">补充要求</label>
+            <textarea v-model="extraGuidance" rows="3" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" />
+          </div>
+          <button
+            @click="saveSettings"
+            :disabled="savingSettings || !chapters.length || startChapter > endChapter"
+            class="w-full px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
+            style="background-color: var(--color-leather); color: var(--color-parchment)"
+            type="button"
+          >
+            {{ savingSettings ? '保存中...' : '保存设置' }}
+          </button>
+          <button
+            @click="saveCurrentStyle"
+            :disabled="!visualStyle"
+            class="w-full px-4 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm font-semibold disabled:opacity-50"
+            type="button"
+          >
+            保存为风格模板
+          </button>
+          <div v-if="settingsMsg" class="text-sm" :class="settingsMsg.startsWith('✅') ? 'text-green-700' : 'text-red-600'">
+            {{ settingsMsg }}
+          </div>
+          <div v-if="appliedSettings" class="text-xs text-[var(--color-ink-light)] leading-6">
+            已保存范围：第{{ appliedSettings.start_chapter }}章 - 第{{ appliedSettings.end_chapter }}章；
+            每章 {{ appliedSettings.shots_per_chapter }} 镜
+          </div>
+        </section>
+
+        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4">
+          <h3 class="font-semibold text-[var(--color-leather)] mb-3">章节目录</h3>
+          <div class="max-h-80 overflow-auto divide-y divide-[var(--color-parchment)]">
+            <div v-for="ch in chapters" :key="ch.num" class="py-2 text-sm">
+              <div class="font-medium text-[var(--color-ink)]">第{{ ch.num }}章 {{ ch.title }}</div>
+              <div class="text-xs text-[var(--color-ink-light)]">{{ ch.chars }} 字</div>
+            </div>
+            <div v-if="!chapters.length" class="text-sm text-[var(--color-ink-light)]">暂无章节</div>
+          </div>
+        </section>
+      </aside>
+
+      <main class="space-y-5">
+        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <h3 class="font-semibold text-[var(--color-leather)]">小说改编漫剧剧本</h3>
+            <div class="flex flex-wrap gap-2">
+              <button
+                @click="generateScriptAdaptation"
+                :disabled="scriptAdapt.running || !canGenerate"
+                class="px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
+                style="background-color: var(--color-leather); color: var(--color-parchment)"
+                type="button"
+              >
+                {{ scriptAdapt.running ? '改编中...' : '生成漫剧剧本' }}
+              </button>
+              <button
+                @click="exportScriptTxt"
+                :disabled="!scriptAdapt.result"
+                class="px-4 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm font-semibold disabled:opacity-50"
+                type="button"
+              >
+                导出 TXT
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1">改编章节数</label>
+              <input v-model.number="scriptTargetChapters" type="number" min="1" max="120" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1">剧情改编幅度</label>
+              <select v-model="scriptAdaptationLevel" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
+                <option>轻度改编</option>
+                <option>中度改编</option>
+                <option>重度改编</option>
+                <option>魔改爽剧化</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1">单章时长</label>
+              <input v-model="scriptEpisodeDuration" placeholder="3-5分钟" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
+            </div>
+            <label class="flex items-center gap-2 text-sm pt-6">
+              <input v-model="scriptRenameCharacters" type="checkbox" />
+              允许修改人物名称
+            </label>
+          </div>
+
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">剧本风格</label>
+            <textarea v-model="scriptStyle" rows="2" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" />
+          </div>
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">剧本改编补充要求</label>
+            <textarea v-model="scriptGuidance" rows="2" placeholder="例如：加强女主戏份、弱化支线、每章结尾必须反转..." class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" />
+          </div>
+
+          <StreamOutput v-bind="scriptAdapt" placeholder="改编后的漫剧剧本将在此显示，可导出 TXT..." />
+        </section>
+
+        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-3">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <h3 class="font-semibold text-[var(--color-leather)]">角色信息与角色卡提示词</h3>
+            <div class="flex flex-wrap gap-2">
+              <button @click="exportPromptContent('characters', 'md')" :disabled="!characters.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
+              <button @click="exportPromptContent('characters', 'txt')" :disabled="!characters.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 TXT</button>
+              <button @click="importImagePrompts('characters')" :disabled="!characters.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导入生图</button>
+              <button
+                @click="generateCharacters"
+                :disabled="characters.running || !canGenerate"
+                class="px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
+                style="background-color: var(--color-leather); color: var(--color-parchment)"
+                type="button"
+              >
+                {{ characters.running ? '生成中...' : '生成角色卡' }}
+              </button>
+            </div>
+          </div>
+          <StreamOutput v-bind="characters" placeholder="角色信息、外貌设定和角色卡提示词将在此显示..." />
+        </section>
+
+        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-3">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <h3 class="font-semibold text-[var(--color-leather)]">章节场景图提示词</h3>
+            <div class="flex flex-wrap gap-2">
+              <button @click="exportPromptContent('scenes', 'md')" :disabled="!scenes.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
+              <button @click="exportPromptContent('scenes', 'txt')" :disabled="!scenes.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 TXT</button>
+              <button @click="importImagePrompts('scenes')" :disabled="!scenes.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导入生图</button>
+              <button
+                @click="generateScenes"
+                :disabled="scenes.running || !canGenerate"
+                class="px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
+                style="background-color: var(--color-leather); color: var(--color-parchment)"
+                type="button"
+              >
+                {{ scenes.running ? '生成中...' : '生成场景提示词' }}
+              </button>
+            </div>
+          </div>
+          <StreamOutput v-bind="scenes" placeholder="每章关键场景、镜头氛围和文生图提示词将在此显示..." />
+        </section>
+
+        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-3">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <h3 class="font-semibold text-[var(--color-leather)]">章节分镜图提示词</h3>
+            <div class="flex flex-wrap gap-2">
+              <button @click="exportPromptContent('storyboards', 'md')" :disabled="!storyboards.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
+              <button @click="exportPromptContent('storyboards', 'txt')" :disabled="!storyboards.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 TXT</button>
+              <button @click="importImagePrompts('storyboards')" :disabled="!storyboards.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导入生图</button>
+              <button
+                @click="generateStoryboards"
+                :disabled="storyboards.running || !canGenerate"
+                class="px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
+                style="background-color: var(--color-leather); color: var(--color-parchment)"
+                type="button"
+              >
+                {{ storyboards.running ? '生成中...' : '生成分镜提示词' }}
+              </button>
+            </div>
+          </div>
+          <StreamOutput v-bind="storyboards" placeholder="按用户指定数量生成的连续分镜图提示词将在此显示..." />
+        </section>
+
+        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <h3 class="font-semibold text-[var(--color-leather)]">制片数据与连续性</h3>
+            <div class="flex flex-wrap gap-2">
+              <button @click="refreshStructuredData" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">刷新数据</button>
+              <button @click="runContinuityCheck" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">连续性检查</button>
+              <button @click="loadStats" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">出场统计</button>
+              <button @click="createQueue" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">创建批量队列</button>
+            </div>
+          </div>
+          <div
+            v-if="dataMsg"
+            class="text-sm"
+            :class="dataMsg.startsWith('✅') ? 'text-green-700' : dataMsg.startsWith('❌') ? 'text-red-600' : 'text-[var(--color-ink-light)]'"
+          >
+            {{ dataMsg }}
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button @click="exportAssets('characters', 'json')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">角色 JSON</button>
+            <button @click="exportAssets('storyboards', 'csv')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">分镜 CSV</button>
+            <button @click="exportAssets('storyboards', 'xlsx')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">分镜 Excel</button>
+            <button @click="exportAssets('all', 'json')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">全部 JSON</button>
+            <button @click="importImagePrompts('all')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">全部导入生图</button>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="text-sm font-semibold text-[var(--color-ink)]">角色一致性锁定</h4>
+              <button @click="saveCharacterCards" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">保存角色锁定</button>
+            </div>
+            <div class="overflow-auto max-h-96 border border-[var(--color-parchment-darker)] rounded-md">
+              <table class="min-w-[980px] w-full text-xs">
+                <thead class="bg-[var(--color-parchment)] sticky top-0">
+                  <tr>
+                    <th class="p-2 text-left w-16">锁定</th>
+                    <th class="p-2 text-left w-28">角色</th>
+                    <th class="p-2 text-left w-36">身份</th>
+                    <th class="p-2 text-left">外貌</th>
+                    <th class="p-2 text-left">服装</th>
+                    <th class="p-2 text-left">角色卡提示词</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="card in characterCards" :key="card.id" class="border-t border-[var(--color-parchment)] align-top">
+                    <td class="p-2"><input v-model="card.locked" type="checkbox" /></td>
+                    <td class="p-2"><input v-model="card.name" class="w-full border rounded px-2 py-1" /></td>
+                    <td class="p-2"><textarea v-model="card.identity" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2"><textarea v-model="card.appearance" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2"><textarea v-model="card.costume" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2"><textarea v-model="card.prompt_positive" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                  </tr>
+                  <tr v-if="!characterCards.length"><td colspan="6" class="p-3 text-[var(--color-ink-light)]">暂无结构化角色卡，生成角色卡后点击刷新数据。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="text-sm font-semibold text-[var(--color-ink)]">分镜表格编辑器</h4>
+              <button @click="saveStoryboardShots" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">保存分镜表</button>
+            </div>
+            <div class="overflow-auto max-h-[520px] border border-[var(--color-parchment-darker)] rounded-md">
+              <table class="min-w-[1180px] w-full text-xs">
+                <thead class="bg-[var(--color-parchment)] sticky top-0">
+                  <tr>
+                    <th class="p-2 text-left w-16">锁定</th>
+                    <th class="p-2 text-left w-20">章节</th>
+                    <th class="p-2 text-left w-16">镜号</th>
+                    <th class="p-2 text-left w-36">主体</th>
+                    <th class="p-2 text-left w-32">角色</th>
+                    <th class="p-2 text-left w-36">地点</th>
+                    <th class="p-2 text-left">正向提示词</th>
+                    <th class="p-2 text-left w-44">连续性</th>
+                    <th class="p-2 text-left w-28">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="shot in storyboardShots" :key="shot.id" class="border-t border-[var(--color-parchment)] align-top">
+                    <td class="p-2"><input v-model="shot.locked" type="checkbox" /></td>
+                    <td class="p-2">第{{ shot.chapter_num }}章</td>
+                    <td class="p-2">{{ shot.shot_no }}</td>
+                    <td class="p-2"><textarea v-model="shot.subject" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2"><textarea v-model="shot.characters" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2"><textarea v-model="shot.location" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2"><textarea v-model="shot.prompt_positive" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2"><textarea v-model="shot.continuity" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2">
+                      <div class="flex flex-col gap-1">
+                        <button @click="regenerateShot(shot)" :disabled="shot.locked || !llmConfig" class="px-2 py-1 rounded border border-[var(--color-parchment-darker)] disabled:opacity-50" type="button">重写</button>
+                        <button @click="generateShotImage(shot)" :disabled="generatingImageIds.has(shot.id)" class="px-2 py-1 rounded border border-[var(--color-parchment-darker)] disabled:opacity-50" type="button">
+                          {{ generatingImageIds.has(shot.id) ? '生图中' : '生图' }}
+                        </button>
+                        <a v-if="shot.image_url" :href="shot.image_url" target="_blank" class="text-[10px] text-green-700 underline">预览</a>
+                        <a v-if="shot.image_download_url" :href="shot.image_download_url" target="_blank" class="text-[10px] text-[var(--color-leather)] underline">下载</a>
+                        <span v-else-if="shot.image_path" class="text-[10px] text-green-700 break-all">已生成</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="!storyboardShots.length"><td colspan="9" class="p-3 text-[var(--color-ink-light)]">暂无结构化分镜，生成分镜后点击刷新数据。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div>
+              <h4 class="text-sm font-semibold text-[var(--color-ink)] mb-2">分镜生图</h4>
+              <div class="grid grid-cols-1 gap-2 text-sm">
+                <select v-model="selectedImageConfig" class="border rounded px-2 py-1">
+                  <option value="">请选择图片生成配置</option>
+                  <option v-for="c in configStore.imageChoices" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </div>
+              <div class="mt-2 text-xs text-[var(--color-ink-light)]">
+                图片接口已移到模型配置；本模块只选择配置并对单个分镜生图。
+              </div>
+              <div class="mt-2 flex gap-2">
+                <router-link to="/config" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm">管理配置</router-link>
+                <router-link to="/images" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm">打开图片生成模块</router-link>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-sm font-semibold text-[var(--color-ink)] mb-2">检查/统计/队列</h4>
+              <div class="max-h-52 overflow-auto text-xs space-y-1">
+                <div v-for="issue in continuityIssues" :key="String(issue.shot_id) + String(issue.message)" class="border-b border-[var(--color-parchment)] py-1">
+                  {{ issue.level }} · {{ issue.shot_id }} · {{ issue.message }}
+                </div>
+                <div v-if="!continuityIssues.length" class="text-[var(--color-ink-light)]">暂无连续性检查结果。</div>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <div class="font-semibold mb-1">角色出场</div>
+                  <div v-for="row in statsRows.slice(0, 8)" :key="row.name">{{ row.name }}：{{ row.count }}</div>
+                </div>
+                <div>
+                  <div class="font-semibold mb-1">关系共现</div>
+                  <div v-for="row in relationRows.slice(0, 8)" :key="row.source + row.target">{{ row.source }} - {{ row.target }}：{{ row.count }}</div>
+                </div>
+              </div>
+              <div class="mt-3 max-h-32 overflow-auto text-xs">
+                <div v-for="item in queueRows" :key="String(item.id)" class="flex items-center justify-between border-b border-[var(--color-parchment)] py-1 gap-2">
+                  <span>{{ item.id }}：第{{ item.start_chapter }}-{{ item.end_chapter }}章 · {{ item.status }}</span>
+                  <span class="flex gap-1">
+                    <button @click="updateQueue(String(item.id), 'paused')" class="px-2 py-0.5 border rounded" type="button">暂停</button>
+                    <button @click="updateQueue(String(item.id), 'retry')" class="px-2 py-0.5 border rounded" type="button">重试</button>
+                    <button @click="updateQueue(String(item.id), 'done')" class="px-2 py-0.5 border rounded" type="button">完成</button>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</template>

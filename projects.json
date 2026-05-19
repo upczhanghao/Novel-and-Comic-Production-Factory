@@ -1,0 +1,17 @@
+{
+    "projects": {
+        "测试项目": {
+            "name": "测试项目",
+            "filepath": "/Users/zhanghao/Desktop/NovelWriter_public-main/output/测试项目",
+            "topic": "",
+            "genre": "玄幻",
+            "num_chapters": 10,
+            "word_number": 3000,
+            "user_guidance": "",
+            "created_at": "2026-05-19T00:13:07",
+            "updated_at": "2026-05-19T20:33:32",
+            "xp_type": ""
+        }
+    },
+    "active_project": "测试项目"
+}

@@ -1,0 +1,81 @@
+{
+    "llm_configs": {
+        "openai": {
+            "api_key": "YOUR_OPENAI_API_KEY",
+            "base_url": "https://api.openai.com/v1",
+            "interface_format": "OpenAI",
+            "model_name": "gpt-5.4-mini-2026-03-17",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600,
+            "enable_thinking": true,
+            "thinking_budget": 0,
+            "enable_streaming": true
+        }
+    },
+    "embedding_configs": {
+        "OpenAI-Embedding": {
+            "interface_format": "OpenAI",
+            "api_key": "YOUR_OPENAI_API_KEY",
+            "base_url": "https://api.openai.com/v1",
+            "model_name": "text-embedding-ada-002",
+            "retrieval_k": 4
+        },
+        "": {
+            "interface_format": "OpenAI",
+            "api_key": "",
+            "base_url": "",
+            "model_name": "",
+            "retrieval_k": 4
+        }
+    },
+    "choose_configs": {
+        "architecture_llm": "DeepSeek",
+        "chapter_outline_llm": "DeepSeek",
+        "final_chapter_llm": "DeepSeek",
+        "consistency_review_llm": "DeepSeek",
+        "prompt_draft_llm": "DeepSeek"
+    },
+    "other_params": {
+        "topic": "",
+        "genre": "玄幻",
+        "num_chapters": 10,
+        "word_number": 3000,
+        "filepath": "./output",
+        "chapter_num": 1,
+        "characters_involved": "",
+        "key_items": "",
+        "scene_location": "",
+        "time_constraint": "",
+        "user_guidance": ""
+    },
+    "proxy_setting": {
+        "enabled": false,
+        "proxy_url": "",
+        "proxy_port": ""
+    },
+    "last_embedding_interface_format": "OpenAI",
+    "prompt_preset": {
+        "active_preset": "网络小说"
+    },
+    "image_configs": {
+        "OpenAI-Images": {
+            "provider": "openai",
+            "api_key": "",
+            "base_url": "https://api.openai.com/v1",
+            "model": "gpt-image-1",
+            "size": "1024x1536",
+            "quality": "medium",
+            "output_format": "png"
+        },
+        "MirrorStages-Images": {
+            "provider": "mirrorstages",
+            "api_key": "YOUR_OPENAI_API_KEY",
+            "base_url": "https://api.mirrorstages.com/openai/v1",
+            "model": "gpt-image-2",
+            "size": "1024x1536",
+            "quality": "medium",
+            "output_format": "png"
+        }
+    }
+}

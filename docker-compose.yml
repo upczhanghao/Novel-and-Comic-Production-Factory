@@ -1,0 +1,17 @@
+services:
+  novel-writer:
+    build: .
+    container_name: ai-novel-writer
+    ports:
+      - "127.0.0.1:7860:7860"
+    volumes:
+      - ./output:/app/output
+      - ./config.json:/app/config.json
+      - ./projects.json:/app/projects.json
+      - ./xp_presets.json:/app/xp_presets.json
+      - ./styles:/app/styles
+      - ./prompts:/app/prompts
+      - ./vectorstore:/app/vectorstore
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
