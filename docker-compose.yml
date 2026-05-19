@@ -1,17 +1,35 @@
 services:
   novel-writer:
-    build: .
-    container_name: ai-novel-writer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: novel-and-comic-production-factory:latest
+    container_name: novel-writer
     ports:
-      - "127.0.0.1:7860:7860"
+      - "${NOVELWRITER_PORT:-7860}:7860"
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      NOVELWRITER_HOST: "0.0.0.0"
+      NOVELWRITER_PORT: "7860"
+      NOVELWRITER_CONFIG_FILE: "/app/data/config.json"
+      NOVELWRITER_PROJECTS_FILE: "/app/data/projects.json"
+      NOVELWRITER_XP_PRESETS_FILE: "/app/data/xp_presets.json"
+      NOVELWRITER_SAVE_PROMPT_HISTORY: "${NOVELWRITER_SAVE_PROMPT_HISTORY:-0}"
+      NOVELWRITER_CORS_ORIGINS: "${NOVELWRITER_CORS_ORIGINS:-}"
+      NOVELWRITER_API_TOKEN: "${NOVELWRITER_API_TOKEN:-}"
     volumes:
+      - novelwriter_data:/app/data
       - ./output:/app/output
-      - ./config.json:/app/config.json
-      - ./projects.json:/app/projects.json
-      - ./xp_presets.json:/app/xp_presets.json
       - ./styles:/app/styles
       - ./prompts:/app/prompts
       - ./vectorstore:/app/vectorstore
-    environment:
-      - TZ=Asia/Shanghai
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  novelwriter_data:

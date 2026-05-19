@@ -75,17 +75,34 @@
 git clone <你的仓库地址>
 cd NovelWriter
 
-# 安装 Python 依赖
-pip install -r requirements.txt
+# 一键生产模式启动
+# - 自动创建 .venv
+# - 自动安装 Python / 前端依赖
+# - 按需构建 frontend/dist
+# - 启动 FastAPI + Vue 静态页面
+./start_api.sh
 
-# 生产模式启动（自动构建前端）
-bash start_api.sh
+# 开发模式（后端热重载 + Vite 前端）
+./start_api.sh --dev
 
-# 或开发模式（后端热重载 + 前端开发服务器）
-bash start_api.sh --dev
+# 如已构建前端，可跳过构建直接启动
+./start_api.sh --skip-build
 ```
 
-启动后访问 http://localhost:7860
+启动后访问 http://localhost:7860。
+
+常用环境变量：
+
+```bash
+# 修改监听端口
+NOVELWRITER_PORT=7861 ./start_api.sh
+
+# 允许局域网访问
+NOVELWRITER_HOST=0.0.0.0 ./start_api.sh
+
+# 强制重新构建前端
+NOVELWRITER_FORCE_BUILD=1 ./start_api.sh
+```
 
 ### Docker 部署
 
@@ -102,6 +119,14 @@ docker compose down
 
 启动后访问 http://your-server-ip:7860
 
+Docker Compose 会使用命名卷 `novelwriter_data` 保存 `config.json`、`projects.json`、`xp_presets.json`，并将 `output/`、`styles/`、`prompts/`、`vectorstore/` 挂载到宿主机目录。首次启动无需提前创建这些 JSON 文件。
+
+如需修改端口：
+
+```bash
+NOVELWRITER_PORT=18080 docker compose up -d
+```
+
 #### 手动 Docker 构建
 
 ```bash
@@ -110,10 +135,11 @@ docker build -t novel-writer .
 docker run -d \
   --name novel-writer \
   -p 7860:7860 \
+  -v novelwriter_data:/app/data \
   -v ./output:/app/output \
-  -v ./config.json:/app/config.json \
   -v ./styles:/app/styles \
   -v ./prompts:/app/prompts \
+  -v ./vectorstore:/app/vectorstore \
   novel-writer
 ```
 

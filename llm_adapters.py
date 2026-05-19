@@ -703,7 +703,10 @@ class GrokAdapter(BaseLLMAdapter):
 def _apply_proxy_settings():
     """读取 config.json 中的代理设置，注入到环境变量中供 httpx/requests/openai 使用。"""
     import os, json
-    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    config_path = os.getenv(
+        "NOVELWRITER_CONFIG_FILE",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"),
+    )
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)

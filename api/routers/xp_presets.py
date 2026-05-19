@@ -11,8 +11,11 @@ from pydantic import BaseModel
 
 router = APIRouter(tags=["xp_presets"])
 
-XP_PRESETS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), "xp_presets.json")
+XP_PRESETS_FILE = os.getenv(
+    "NOVELWRITER_XP_PRESETS_FILE",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "xp_presets.json"),
+)
 
 
 def _load_presets() -> list[dict]:
@@ -27,6 +30,7 @@ def _load_presets() -> list[dict]:
 
 
 def _save_presets(presets: list[dict]):
+    os.makedirs(os.path.dirname(XP_PRESETS_FILE) or ".", exist_ok=True)
     with open(XP_PRESETS_FILE, "w", encoding="utf-8") as f:
         json.dump(presets, f, ensure_ascii=False, indent=2)
 

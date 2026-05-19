@@ -1,0 +1,32 @@
+.git
+.gitignore
+.DS_Store
+**/.DS_Store
+
+# Python local/runtime files
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+app.log
+prompt_history.jsonl
+
+# Frontend local/build artifacts; Docker builds frontend in its own stage.
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# User/runtime data mounted by docker-compose.
+output
+vectorstore
+data
+config.json
+projects.json
+xp_presets.json
+
+# Editor/temp files
+.idea
+.vscode
+*.swp
+*.tmp

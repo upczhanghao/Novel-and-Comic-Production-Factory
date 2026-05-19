@@ -154,10 +154,10 @@ class NovelGeneratorWeb:
     """小说生成器 Web 应用类"""
 
     def __init__(self):
-        self.config_file = "config.json"
+        self.config_file = os.getenv("NOVELWRITER_CONFIG_FILE", "config.json")
         self.config = load_config(self.config_file) or self._default_config()
         # 项目管理
-        self.projects_file = "projects.json"
+        self.projects_file = os.getenv("NOVELWRITER_PROJECTS_FILE", "projects.json")
         self.projects_data = self._load_projects()
         # 初始化提示词预设系统
         prompt_definitions.ensure_default_preset()

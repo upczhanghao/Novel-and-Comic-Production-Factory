@@ -25,6 +25,9 @@ def load_config(config_file: str) -> dict:
 # PenBo 增加了创建默认配置文件函数
 def create_config(config_file: str) -> dict:
     """创建一个创建默认配置文件。"""
+    config_dir = os.path.dirname(config_file)
+    if config_dir:
+        os.makedirs(config_dir, exist_ok=True)
     config = {
     "last_interface_format": "OpenAI",
     "last_embedding_interface_format": "OpenAI",
