@@ -1,136 +1,178 @@
-# NovelWriter
+# Novel and Comic Production Factory
 
-基于大语言模型的智能小说创作平台。Vue 3 前端 + FastAPI 后端，从构思到成稿的一站式 AI 创作体验。
+一个面向小说创作、漫剧制作和 AI 图片生成的本地化创作工作台。项目当前采用 **Vue 3 + TypeScript + Vite** 前端、**FastAPI + SSE** 后端，生产模式由 FastAPI 直接托管前端构建产物，支持本地一键脚本启动和 Docker Compose 部署。
 
-## 更新记录
+## 核心功能
 
-### 2026-05-20
-- **全站 UI 大改版** — 参考 Mirrorstages 控制台风格重构前端视觉：浅色侧栏、顶部项目工具栏、线性图标导航、黑色主按钮、细边框卡片、轻量阴影与移动端底部导航，整体更接近现代 AI 创作平台
-- **模块级工作台布局** — 创作工坊、漫剧制作、图片生成、文风与叙事DNA、模型配置、提示词方案、指令配置、日志、文件、阅读器等页面统一接入 `module-page / module-toolbar / module-panel` 工作台结构，桌面端与移动端均做响应式适配
-- **漫剧制作流程优化** — 漫剧模块重组为“输入与模型 / 范围与视觉约束 / 剧本改编 / 角色卡 / 场景图 / 分镜图 / 制片数据”流程，新增结构化制片数据编辑、连续性检查、批量队列、分镜单图生成等更清晰的操作区
-- **漫剧 AI 指令配置** — 新增「指令配置」模块，可手动编辑小说改编漫剧剧本、角色信息与角色卡提示词、章节场景图提示词、章节分镜图提示词等 AI 指令，并支持恢复默认模板
-- **图片生成任务管理** — 图片生成模块新增待生成提示词队列、生成记录列表、当前任务删除、生成记录删除，并将队列和记录落地到 JSON 文件，删除时同步更新记录文件
-- **图片提示词质量优化** — 优化漫剧角色卡、场景图、分镜图提示词生成逻辑，角色卡生图改为单张全身角色图，避免全景与特写拼在同一张图中
-- **默认模板扩展** — 提示词方案、文风模板与漫剧风格模板新增多组默认选项，覆盖古言权谋、悬疑推理、玄幻升级流、科幻群像、都市逆袭爽文、轻小说恋爱等类型
-- **默认配置选择修复** — 修复多个模块中 LLM 配置、Embedding 配置、图片生成配置下拉框默认值为空或无法选择的问题，前端会自动选择第一个可用配置，后端会过滤空配置名
-- **构建与交互验证** — 前端生产构建通过，`/`、`/manju`、`/images`、`/styles`、`/config`、`/logs` 等主要路由验证可访问
+| 模块 | 作用 |
+| --- | --- |
+| 创作工坊 | 从题材设定、小说架构、章节目录、详细细纲到正文生成、定稿、去 AI 痕迹、续写扩展的一体化小说生产流程 |
+| 漫剧制作 | 导入小说 TXT，生成漫剧剧本、角色信息、角色卡提示词、章节场景图提示词、章节分镜图提示词，并支持制片数据、连续性检查、分镜生图和队列导入 |
+| 图片生成 | 使用图片模型根据提示词生成图片，管理待生成提示词队列和生成记录，支持删除任务并同步更新本地记录文件 |
+| 模型配置 | 配置 LLM、Embedding、图片生成模型、网络代理和默认配置选择 |
+| 指令配置 | 配置漫剧制作相关 AI 指令模板，包括小说改编、角色信息与角色卡、场景图、分镜图提示词生成 |
+| 提示词方案 | 管理小说创作各阶段提示词预设，内置网络小说、悬疑推理、玄幻升级流、科幻群像、古言权谋等方案 |
+| 文风与 DNA | 分析并保存文风模板、叙事 DNA、作者参考库，供架构、目录、章节和漫剧流程复用 |
+| 知识库 | 导入外部参考资料并向量化检索，在生成章节时注入相关资料 |
+| 创意讨论 | 多模式 AI 头脑风暴，可注入当前项目上下文和用户画像 |
+| 用户画像 | 维护全局创作偏好，支持从文本中提取偏好并在生成时参考 |
+| 一致性检查 | 检查章节、设定和角色状态之间的矛盾 |
+| 文件管理 / 阅读器 / 日志 | 管理项目文件、阅读章节正文、查看运行日志和提示词历史 |
 
-### 2026-04-18
-- **创意讨论 5 种模式** — 标题栏快速切换：轻松闲聊（简短随意）/ 专业顾问（结构化建议）/ 头脑风暴（多角色视角碰撞）/ 魔鬼代言人（挑战想法找漏洞）/ 角色扮演（以小说角色身份对话）
-- **润色多模式** — 通用润色 / 修改剧情 / 增加内容 三种模式，可注入细纲/角色状态/前文摘要/世界观 4 项上下文作为参考
-- **详细细纲生成** — 新增独立的"生成章节细纲"步骤（位于蓝图与章节生成之间），支持精简（1000-2000字/章）和详细（3000-5000字/章）两种模式，可批量生成、修订、原位替换
-- **按场景分段生成** — 章节生成支持"按场景分段"开关：基于细纲解析场景，高强度场景与普通场景分别用不同密度生成（高强度浓墨重彩，普通简练推进）
-- **用户画像系统** — 全局偏好画像（独立"用户画像"页面），可手动编辑，也可在创意讨论/修订/润色中半自动提取偏好（弹窗确认后写入），生成架构/角色/剧情/蓝图/细纲时自动参考
-- **全局网络代理** — 模型配置页新增"网络代理"区块（地址+端口+启用开关），保存后立即生效，对所有 LLM 和 Embedding 请求生效
-- **Agent 工具定义** — 新增 `agent_tools.py`（25 个工具的 JSON Schema 定义）和 `agent_config.py`（完整的 Agent system prompt 和工作流定义），为后续接入 Hermes Agent / LangGraph 等 Agent 框架做准备
-- **导出标题去重** — 合并导出小说时检测章节是否已自带标题，避免重复添加章节标题
+## 技术栈
 
-### 2026-03-30
-- **场景润色对比面板** — 全新段落对齐对比视图，左右分列展示润色前后差异（字符级高亮），下方独立编辑面板支持选择编辑润色前/后文本并保存
-- **续写修订上下文注入** — 续写架构的 5 个修订面板（方向大纲/世界观/角色/剧情弧/角色状态）新增"注入上下文"复选框，可选择注入种子/角色/世界观/剧情作为参考
-- **修订功能增强** — 后端修订接口支持读取项目已有架构内容作为参考资料注入 prompt，提升修订质量
-- **角色状态匹配修复** — 修复精炼章节时角色名匹配失败的问题（如"男主角名：\n陈玉"格式），现在会检查角色块文本前几行进行辅助匹配
+- 前端：Vue 3、TypeScript、Vite、Pinia、Vue Router、Tailwind CSS
+- 后端：FastAPI、Uvicorn、SSE 流式输出
+- LLM 适配：OpenAI 兼容接口、DeepSeek、Gemini、Azure OpenAI、Azure AI、Ollama、ML Studio、硅基流动、火山引擎、Grok、MirrorStages 等
+- Embedding 适配：OpenAI 兼容接口、Azure OpenAI、Ollama、ML Studio、Gemini、硅基流动、MirrorStages 等
+- 图片生成：OpenAI / MirrorStages 兼容图片接口
+- 向量库：ChromaDB
 
-### 2026-03-25
-- **功能同步** — 同步私有版功能更新：创意讨论、分步修订、角色外貌固定项、蓝图细化、去AI痕迹分轮多深度处理、阅读器可编辑保存等
-- **Docker 部署修复** — 修复多个 Docker 首次部署问题（xp_presets.json 目录冲突、单文件挂载报错、shell 运算符优先级等），简化部署流程
+## 环境要求
 
-### 2026-03-12
-- **初始公开发布** — NovelWriter 公开版首次发布，包含完整的小说架构生成、章节生成、文风仿写、叙事DNA、续写扩展等核心功能
+本地脚本启动需要：
 
-## 功能特性
+- Python 3.11 或更高版本，推荐 Python 3.12
+- Node.js 18 或更高版本，推荐 Node.js 20
+- npm
+- 可用的 LLM API Key
+- 如需知识库、文风参考库或叙事 DNA 检索，需要配置可用的 Embedding 模型
+- 如需图片生成，需要配置图片生成模型
 
-| 功能模块 | 说明 |
-|---------|------|
-| 小说架构生成 | 核心种子 / 世界观构建 / 角色动力学 / 情节架构 |
-| 章节目录规划 | 悬念节奏曲线 / 伏笔管理 / 强度分布设计 |
-| 智能章节生成 | 知识库检索 / 前文摘要 / 上下文连贯性保障 |
-| 文风仿写 | 分析目标文本风格 → 保存为模板 → 章节生成时自动模仿 |
-| 叙事DNA | 分析作者叙事模式（内容配比 / 节奏 / 场景结构）→ 注入架构、蓝图、章节三层生成 |
-| 作者参考库 | 导入作者原文 → 向量化存储 → 生成时检索相似片段作为写法示例 |
-| 续写扩展 | 在已有故事基础上追加新剧情弧与角色 |
-| 创意讨论 | 多轮对话头脑风暴，注入项目上下文（种子/角色/世界观等），与 AI 商讨创意方向 |
-| 分步修订 | 对分步生成的每个环节，可基于已有内容 + 修改建议让 LLM 局部修订，无需重新生成 |
-| 去AI痕迹 | 分轮多深度清除 AI 生成痕迹，支持单章和批量处理，生成前后对比 |
-| 状态追踪 | 角色状态自动更新 / 前文摘要自动维护 / 外貌特征固定项保护（更新时不丢失） |
-| 一致性检查 | 检测剧情矛盾与设定冲突 |
-| 知识库 | 导入外部参考资料，增强创作深度 |
-| 提示词预设 | 多套提示词方案一键切换，支持自定义编辑（含创意讨论提示词） |
-| XP预设管理 | 自定义内容类型预设，可创建/编辑/删除，一键注入所有生成阶段 |
-| 小说阅读 | 内置阅读器，支持单章 / 全文阅读、字号调节 |
-| 项目管理 | 多项目并行管理，独立配置与存储 |
+Docker 启动需要：
 
-## 快速开始
+- Docker
+- Docker Compose v2
 
-### 环境要求
+## 快速启动
 
-- Python 3.12
-- Node.js 18+（仅开发模式需要）
-- 有效的 LLM API Key（DeepSeek / OpenAI / Gemini / Ollama 等兼容 OpenAI 格式的服务）
-
-### 本地启动
+### macOS / Linux 一键启动
 
 ```bash
-# 克隆项目
 git clone <你的仓库地址>
-cd NovelWriter
+cd Novel-and-Comic-Production-Factory
 
-# 一键生产模式启动
-# - 自动创建 .venv
-# - 自动安装 Python / 前端依赖
-# - 按需构建 frontend/dist
-# - 启动 FastAPI + Vue 静态页面
+chmod +x start_api.sh start_web.sh
 ./start_api.sh
+```
 
-# 开发模式（后端热重载 + Vite 前端）
+启动后访问：
+
+```text
+http://localhost:7860
+```
+
+`start_api.sh` 会自动完成以下工作：
+
+- 创建 `.venv` 虚拟环境
+- 安装或更新 Python 依赖
+- 安装前端依赖
+- 按需构建 `frontend/dist`
+- 初始化 `output/`、`styles/`、`prompts/`、`vectorstore/`、`projects.json`、`xp_presets.json`
+- 启动 FastAPI 后端并托管 Vue 前端页面
+
+### 开发模式
+
+```bash
 ./start_api.sh --dev
+```
 
-# 如已构建前端，可跳过构建直接启动
+开发模式会同时启动：
+
+- 后端：`http://127.0.0.1:7860`
+- 前端 Vite：`http://127.0.0.1:5173`
+
+开发模式下，前端代理默认连接 `http://localhost:7860`。如果只想修改前端页面端口：
+
+```bash
+NOVELWRITER_FRONTEND_PORT=5174 ./start_api.sh --dev
+```
+
+如果要修改开发模式后端端口，需要同步调整 `frontend/vite.config.ts` 中的代理目标。
+
+### 跳过前端构建
+
+如果已经构建过前端，可跳过构建检查：
+
+```bash
 ./start_api.sh --skip-build
 ```
 
-启动后访问 http://localhost:7860。
-
-常用环境变量：
+如需强制重新构建：
 
 ```bash
-# 修改监听端口
-NOVELWRITER_PORT=7861 ./start_api.sh
-
-# 允许局域网访问
-NOVELWRITER_HOST=0.0.0.0 ./start_api.sh
-
-# 强制重新构建前端
 NOVELWRITER_FORCE_BUILD=1 ./start_api.sh
 ```
 
-### Docker 部署
+### Windows 启动
+
+推荐使用 WSL 或 Git Bash 运行：
 
 ```bash
-# 构建并启动
-docker compose up -d
+./start_api.sh
+```
 
-# 查看日志
+也可以手动启动：
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+
+cd frontend
+npm install
+npm run build
+cd ..
+
+python -m uvicorn api_server:app --host 127.0.0.1 --port 7860
+```
+
+## Docker Compose 部署
+
+```bash
+docker compose up -d --build
+```
+
+访问：
+
+```text
+http://服务器IP:7860
+```
+
+查看日志：
+
+```bash
 docker compose logs -f
+```
 
-# 停止
+停止服务：
+
+```bash
 docker compose down
 ```
 
-启动后访问 http://your-server-ip:7860
-
-Docker Compose 会使用命名卷 `novelwriter_data` 保存 `config.json`、`projects.json`、`xp_presets.json`，并将 `output/`、`styles/`、`prompts/`、`vectorstore/` 挂载到宿主机目录。首次启动无需提前创建这些 JSON 文件。
-
-如需修改端口：
+修改宿主机端口：
 
 ```bash
-NOVELWRITER_PORT=18080 docker compose up -d
+NOVELWRITER_PORT=18080 docker compose up -d --build
 ```
 
-#### 手动 Docker 构建
+Docker Compose 默认持久化方式：
+
+| 容器路径 | 宿主机 / 卷 | 内容 |
+| --- | --- | --- |
+| `/app/data` | `novelwriter_data` 命名卷 | `config.json`、`projects.json`、`xp_presets.json` |
+| `/app/output` | `./output` | 项目输出、章节、漫剧数据、图片记录 |
+| `/app/styles` | `./styles` | 文风模板、叙事 DNA、作者参考库索引元数据 |
+| `/app/prompts` | `./prompts` | 提示词方案 |
+| `/app/vectorstore` | `./vectorstore` | 向量库数据 |
+
+首次启动无需提前创建 `config.json`、`projects.json` 或 `xp_presets.json`。
+
+## 手动 Docker 运行
 
 ```bash
-docker build -t novel-writer .
+docker build -t novel-and-comic-production-factory .
 
 docker run -d \
   --name novel-writer \
@@ -140,189 +182,284 @@ docker run -d \
   -v ./styles:/app/styles \
   -v ./prompts:/app/prompts \
   -v ./vectorstore:/app/vectorstore \
-  novel-writer
+  novel-and-comic-production-factory
 ```
 
-## 使用流程
+## 常用环境变量
 
-### 1. 配置模型
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `NOVELWRITER_HOST` | `127.0.0.1`，Docker 中为 `0.0.0.0` | 后端监听地址 |
+| `NOVELWRITER_PORT` | `7860` | 后端监听端口；Docker Compose 中也控制宿主机映射端口 |
+| `NOVELWRITER_FRONTEND_PORT` | `5173` | 开发模式 Vite 前端端口 |
+| `NOVELWRITER_PYTHON` | 自动查找 | 指定 Python 可执行文件 |
+| `NOVELWRITER_USE_SYSTEM_PYTHON` | `0` | 设为 `1` 时不创建 `.venv`，直接使用系统 Python |
+| `NOVELWRITER_SKIP_BUILD` | `0` | 设为 `1` 时跳过前端构建 |
+| `NOVELWRITER_FORCE_BUILD` | `0` | 设为 `1` 时强制重新构建前端 |
+| `NOVELWRITER_CONFIG_FILE` | `config.json` | 配置文件路径 |
+| `NOVELWRITER_PROJECTS_FILE` | `projects.json` | 项目索引文件路径 |
+| `NOVELWRITER_XP_PRESETS_FILE` | `xp_presets.json` | XP 预设文件路径 |
+| `NOVELWRITER_CORS_ORIGINS` | 本地默认白名单 | 额外 CORS 白名单，多个地址用英文逗号分隔 |
+| `NOVELWRITER_API_TOKEN` | 空 | 设置后，除 `/api/health` 外的 API 需要携带 `X-NovelWriter-Token` 或 Bearer Token |
+| `NOVELWRITER_SAVE_PROMPT_HISTORY` | `0` | 设为 `1` 时保存提示词历史 |
 
-在「模型配置」页面设置：
+## 首次使用流程
 
-- **LLM 配置** — API Key、Base URL、模型名、Temperature 等
-- **Embedding 配置** — 向量嵌入模型，用于知识库和作者参考库检索
+### 1. 打开模型配置
 
-支持所有兼容 OpenAI API 格式的服务（DeepSeek、硅基流动、OpenRouter、Ollama 等）。
+进入「模型配置」页面，至少配置一个 LLM。建议同时配置：
 
-### 2. 创作
+- LLM 配置：用于小说生成、漫剧脚本、角色卡、场景图、分镜图、创意讨论等文本任务
+- Embedding 配置：用于知识库、作者参考库、文风参考检索
+- 图片配置：用于图片生成模块和漫剧分镜单图生成
 
-在「创作工坊」中按步骤操作：
+配置保存后，各模块的下拉框会默认选择可用配置。
 
-1. **Step 1 生成架构** — 输入主题 / 类型 / 章节数，生成核心种子、角色体系、世界观、情节架构（支持分步生成，每步可基于建议修订）
-2. **Step 2 生成目录** — 规划各章定位、悬念密度、伏笔操作
-3. **Step 3 生成章节** — 逐章生成正文，可指定角色 / 道具 / 场景 / 文风（支持流式输出）
-4. **Step 4 定稿** — 润色章节，自动更新前文摘要与角色状态
-5. **Step 5 去AI痕迹** — 分轮清除 AI 生成痕迹，支持单章和批量处理
-6. **Step 6 续写** — 追加新弧与角色（支持分步续写，每步可修订），回到 Step 2-5 继续
+### 2. 创建或选择项目
 
-### 3. 辅助功能
+顶部项目栏用于创建、激活和切换项目。每个项目会有自己的输出目录，默认位于 `output/` 下。
 
-- **创意讨论** — 在导航栏「创意讨论」中与 AI 进行多轮对话头脑风暴，可选择注入项目上下文（核心种子 / 角色 / 世界观等），讨论创意方向和解决创作难题
-- **分步修订** — 分步生成的每个环节（核心种子 / 角色 / 世界观 / 情节等）生成后，展开「✏️ 基于建议修订」面板，输入修改建议即可局部修订
-- **文风仿写** — 粘贴目标文本 → 分析风格 → 保存模板 → 在 Step 3「文风选择」中选用
-- **叙事DNA** — 粘贴样本文章 → 分析叙事模式 → 在 Step 1/2/3 的「叙事DNA风格」中选用
-- **作者参考库** — 上传 .txt 原文 → 向量化 → 生成时自动检索相似片段注入 prompt
-- **提示词方案** — 切换 / 编辑不同风格的提示词预设（含创意讨论提示词）
-- **知识库** — 导入 .txt 参考资料，生成章节时自动检索
-- **一致性检查** — 检测章节与设定的逻辑矛盾
-- **小说阅读** — 内置阅读器，按章或全文阅读已生成的内容
+项目目录中常见文件包括：
 
-## 高级功能
+- `project_config.json`：项目参数
+- `Novel_architecture.txt`：小说架构
+- `Novel_directory.txt`：章节目录
+- `chapters/` 或章节正文文件：生成的正文
+- `manju/`：漫剧制作数据
+- `images/`：图片生成结果、提示词队列和生成记录
 
-### 叙事DNA
+### 3. 使用创作工坊生成小说
 
-叙事DNA 分析作者在**内容层面**的写作模式，包括：内容配比、推进节奏、场景结构、角色关系模式、对话风格、叙事视角。
+推荐流程：
 
-**使用步骤：**
+1. 在「基础参数」中选择 LLM、Embedding、提示词方案、文风和叙事 DNA。
+2. 生成小说架构，包括核心种子、世界观、角色、剧情弧。
+3. 生成章节目录。
+4. 生成详细细纲，可选择精简或详细模式。
+5. 逐章生成正文，必要时使用知识库、作者参考库、文风和叙事 DNA。
+6. 定稿润色，自动维护前文摘要和角色状态。
+7. 使用去 AI 痕迹模块进行单章或批量优化。
+8. 使用阅读器查看和编辑最终章节。
 
-1. 打开「文风与DNA」页面
-2. 选择 LLM 配置和目标样式（需先创建同名文风样式）
-3. 粘贴 1000–5000 字的样本文本（建议使用完整章节）
-4. 点击「分析叙事DNA」，结果自动保存
-5. 在创作工坊 Step 1/2/3 的「叙事DNA风格」下拉框中选择
+### 4. 使用漫剧制作模块
 
-> **叙事DNA vs 文风仿写：**
-> - 文风仿写（文笔层）= 词汇、句式、修辞、节奏感 → Step 3「文风选择」
-> - 叙事DNA（叙事层）= 内容配比、升温节奏、场景结构 → 各阶段「叙事DNA风格」
-> - 两者可独立选择、相互叠加
+推荐流程：
 
-### 作者参考库
+1. 进入「漫剧制作」，导入小说 TXT。
+2. 选择 LLM、章节范围、每章分镜数量、视觉风格和额外约束，并保存设置。
+3. 生成漫剧剧本，把小说改编为适合竖屏漫剧的脚本。
+4. 生成角色信息和角色卡提示词，角色卡默认生成单张全身角色图提示词。
+5. 生成章节场景图提示词，沉淀地点、光影和氛围。
+6. 生成章节分镜图提示词，把剧情拆成可执行镜头。
+7. 使用提示词增强、连续性检查、队列导入或单镜生图继续制作。
+8. 如需修改 AI 指令，进入「指令配置」调整对应模板。
 
-将作者原文导入向量库，生成章节时自动检索相似片段作为写法示例。
+### 5. 使用图片生成模块
 
-1. 在「文风与DNA」页面右侧「作者参考库」区域
-2. 选择 Embedding 配置，选择关联的文风样式
-3. 上传 .txt 格式作者原文（支持多文件批量上传）
-4. 生成章节时系统自动检索并以 `【参考原文写法】` 注入 prompt
+1. 在「模型配置」中添加图片配置，支持 `openai` 和 `mirrorstages` provider。
+2. 在「图片生成」中输入提示词，或从漫剧模块导入待生成提示词。
+3. 生成后会写入生成记录。
+4. 待生成提示词和生成记录都可以直接删除，删除操作会同步更新项目内的记录 JSON 文件。
 
-### 提示词预设
+## 模型配置示例
 
-项目内置多套提示词方案，可在「提示词方案」页面切换或自定义编辑：
+### OpenAI 兼容 LLM
 
-| 预设 | 适用场景 |
-|------|---------|
-| 网络小说 | 起点、番茄等网络连载小说 |
-| 短篇小说 | 3 万字内短篇小说，剧情短平快 |
-| 连载小说 | 多弧结构连载小说 |
-
-每套预设包含完整的架构、目录、章节等各阶段 prompt，可根据需要自由修改。
-
-## 项目结构
-
-```
-NovelWriter/
-├── api_server.py              # FastAPI 后端入口
-├── web_server.py              # Gradio 旧版入口（兼容保留）
-├── prompt_definitions.py      # 提示词定义与预设管理
-├── config_manager.py          # 配置管理
-├── llm_adapters.py            # LLM 接口适配（OpenAI / Ollama）
-├── embedding_adapters.py      # Embedding 接口适配
-├── consistency_checker.py     # 一致性检查
-├── chapter_directory_parser.py# 章节目录解析
-├── utils.py                   # 工具函数
-├── novel_generator/           # 核心生成逻辑
-│   ├── architecture.py        #   架构生成
-│   ├── blueprint.py           #   目录生成
-│   ├── chapter.py             #   章节生成
-│   ├── finalization.py        #   定稿处理
-│   ├── humanizer.py           #   去AI痕迹处理
-│   ├── knowledge.py           #   知识库管理
-│   └── vectorstore_utils.py   #   向量存储工具
-├── api/                       # FastAPI 路由
-│   └── routers/               #   各功能模块路由
-├── frontend/                  # Vue 3 + TypeScript 前端
-│   └── src/
-│       ├── views/             #   页面视图
-│       ├── components/        #   组件
-│       └── stores/            #   状态管理
-├── prompts/                   # 提示词预设 JSON
-├── styles/                    # 文风模板 JSON
-├── config.example.json        # 配置模板
-├── Dockerfile                 # Docker 多阶段构建
-├── docker-compose.yml         # Docker Compose 编排
-├── requirements.txt           # Python 依赖
-├── start_api.sh               # Linux/macOS 启动脚本
-└── start_web.bat              # Windows 启动脚本
+```text
+接口格式: OpenAI
+Base URL: https://api.openai.com/v1
+模型名: gpt-4o-mini
+API Key: 你的 API Key
+Temperature: 0.7
+Max Tokens: 8192
+Timeout: 600
 ```
 
-## 常用配置模板
+许多兼容 OpenAI API 的服务也可使用这一格式，只需替换 `Base URL` 和 `模型名`。
 
 ### DeepSeek
 
-```
-LLM:
-  Base URL: https://api.deepseek.com/v1
-  模型: deepseek-chat
-  Temperature: 0.7
-  Max Tokens: 8192
-
-Embedding:
-  接口格式: OpenAI
-  Base URL: https://api.openai.com/v1
-  模型: text-embedding-ada-002
+```text
+接口格式: DeepSeek 或 OpenAI
+Base URL: https://api.deepseek.com/v1
+模型名: deepseek-chat
+API Key: 你的 DeepSeek API Key
+Temperature: 0.7
+Max Tokens: 8192
+Timeout: 600
 ```
 
-### 硅基流动（SiliconFlow）
+### Ollama 本地模型
 
-```
-LLM:
-  Base URL: https://api.siliconflow.cn/v1
-  模型: deepseek-ai/DeepSeek-V3
-  Temperature: 0.7
-  Max Tokens: 32768
-
-Embedding:
-  接口格式: OpenAI
-  Base URL: https://api.siliconflow.cn/v1
-  模型: Qwen/Qwen3-Embedding-4B
-```
-
-### Ollama 本地（免费）
+先安装并拉取模型：
 
 ```bash
-# 先安装模型
 ollama pull qwen2.5:7b
 ollama pull nomic-embed-text
 ```
 
-```
-LLM:
-  Base URL: http://localhost:11434/v1
-  模型: qwen2.5:7b
-  API Key: ollama
+LLM：
 
-Embedding:
-  接口格式: Ollama
-  Base URL: http://localhost:11434
-  模型: nomic-embed-text
+```text
+接口格式: Ollama
+Base URL: http://localhost:11434/v1
+模型名: qwen2.5:7b
+API Key: ollama
 ```
 
-## 服务器部署
+Embedding：
 
-### systemd 服务
+```text
+接口格式: Ollama
+Base URL: http://localhost:11434
+模型名: nomic-embed-text
+```
 
-创建 `/etc/systemd/system/novel-writer.service`：
+### 图片生成配置
+
+OpenAI：
+
+```text
+Provider: openai
+Base URL: https://api.openai.com/v1
+Model: gpt-image-1
+Size: 1024x1536
+Quality: medium
+Output Format: png
+```
+
+MirrorStages：
+
+```text
+Provider: mirrorstages
+Base URL: https://api.mirrorstages.com/openai/v1
+Model: gpt-image-2
+Size: 1024x1536
+Quality: medium
+Output Format: png
+```
+
+## 项目结构
+
+```text
+Novel-and-Comic-Production-Factory/
+├── api_server.py                 # FastAPI 后端入口，生产模式托管 Vue dist
+├── web_server.py                 # 旧版 Gradio 应用兼容保留，当前主要入口不是它
+├── start_api.sh                  # macOS/Linux/WSL 一键启动脚本
+├── start_web.sh                  # 兼容旧入口，转发到 start_api.sh
+├── Dockerfile                    # 前端构建 + 后端运行的多阶段镜像
+├── docker-compose.yml            # Docker Compose 部署配置
+├── requirements.txt              # Python 依赖
+├── config.example.json           # 配置文件示例
+├── config_manager.py             # 配置管理
+├── llm_adapters.py               # LLM 适配器
+├── embedding_adapters.py         # Embedding 适配器
+├── prompt_definitions.py         # 小说创作提示词方案管理
+├── default_style_templates.py    # 默认文风模板
+├── api/
+│   ├── image_service.py          # 图片生成、记录与队列管理
+│   ├── manju_instruction_templates.py
+│   └── routers/                  # FastAPI 功能路由
+├── novel_generator/              # 小说生成、细纲、定稿、去 AI 痕迹、知识库等核心逻辑
+├── frontend/
+│   └── src/
+│       ├── views/                # 页面模块
+│       ├── components/           # 通用组件和创作工坊步骤组件
+│       ├── stores/               # Pinia 状态
+│       └── styles/               # 全局样式
+├── prompts/                      # 提示词方案 JSON
+├── styles/                       # 文风模板 JSON
+├── output/                       # 本地项目输出，运行时生成
+└── vectorstore/                  # 向量库数据，运行时生成
+```
+
+## 数据与备份
+
+建议备份以下内容：
+
+- `config.json`：模型配置、代理配置、图片配置
+- `projects.json`：项目列表和当前激活项目
+- `xp_presets.json`：XP 预设
+- `output/`：小说、漫剧、图片和项目配置
+- `styles/`：文风模板和叙事 DNA
+- `prompts/`：自定义提示词方案
+- `vectorstore/`：知识库和作者参考库向量数据
+
+Docker Compose 部署时，`config.json`、`projects.json`、`xp_presets.json` 在 `novelwriter_data` 命名卷中。迁移服务器时需要同时迁移该命名卷和宿主机挂载目录。
+
+## 常见问题
+
+### 页面打不开
+
+先确认服务是否启动：
+
+```bash
+curl http://127.0.0.1:7860/api/health
+```
+
+如果返回 `{"status":"ok","version":"2.0.0"}`，说明后端正常。再检查端口、防火墙、反向代理或 Docker 端口映射。
+
+### 生产模式打开后只有 API，没有前端页面
+
+说明 `frontend/dist` 不存在。执行：
+
+```bash
+NOVELWRITER_FORCE_BUILD=1 ./start_api.sh
+```
+
+或手动构建：
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+python -m uvicorn api_server:app --host 127.0.0.1 --port 7860
+```
+
+### 生成失败或提示模型配置错误
+
+检查「模型配置」中的：
+
+- API Key 是否填写
+- Base URL 是否以正确路径结尾，例如 OpenAI 兼容接口通常是 `/v1`
+- 模型名是否存在
+- 接口格式是否与服务匹配
+- 代理设置是否影响请求
+
+### 知识库或作者参考库不可用
+
+需要先配置可用的 Embedding 模型。若使用 Ollama，需要确保本地 Ollama 服务正在运行，并且已经拉取 Embedding 模型。
+
+### Docker 中配置保存后重启丢失
+
+确认使用的是当前 `docker-compose.yml`，并且存在 `novelwriter_data:/app/data` 卷挂载。不要把单个 `config.json` 文件直接挂载到容器中，否则首次启动时容易出现文件和目录冲突。
+
+### 开启 API Token 后前端请求 401
+
+如果设置了 `NOVELWRITER_API_TOKEN`，浏览器端需要在本地存储中写入同样的 token，键名为：
+
+```text
+novelwriter_api_token
+```
+
+也可以在自定义前端构建时通过 `VITE_NOVELWRITER_API_TOKEN` 注入。
+
+## 服务器部署建议
+
+Docker Compose 是推荐部署方式。若使用 systemd 直接部署，建议先用脚本完成依赖和前端构建，再让 systemd 启动 Uvicorn：
 
 ```ini
 [Unit]
-Description=NovelWriter Web Service
+Description=Novel and Comic Production Factory
 After=network.target
 
 [Service]
 Type=simple
-User=your-username
-WorkingDirectory=/path/to/NovelWriter
-ExecStart=/usr/bin/python3 -m uvicorn api_server:app --host 127.0.0.1 --port 7860
+WorkingDirectory=/path/to/Novel-and-Comic-Production-Factory
+Environment=NOVELWRITER_HOST=127.0.0.1
+Environment=NOVELWRITER_PORT=7860
+ExecStart=/path/to/Novel-and-Comic-Production-Factory/.venv/bin/python -m uvicorn api_server:app --host 127.0.0.1 --port 7860
 Restart=always
 RestartSec=10
 
@@ -330,12 +467,7 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now novel-writer
-```
-
-### Nginx 反向代理（可选）
+Nginx 反向代理示例：
 
 ```nginx
 server {
@@ -343,36 +475,21 @@ server {
     server_name your-domain.com;
 
     location / {
-        proxy_pass http://localhost:7860;
+        proxy_pass http://127.0.0.1:7860;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_buffering off;
     }
 }
 ```
 
-## 疑难解答
-
-**Q: 无法访问页面？**
-检查防火墙是否放通 7860 端口，确认服务正常运行。
-
-**Q: 生成失败 / Expecting value 错误？**
-API Key 或 Base URL 配置有误，检查「模型配置」页面。
-
-**Q: 生成速度慢？**
-尝试降低 max_tokens、使用更快的模型，或部署本地 Ollama。
-
-**Q: 章节目录信息（本章定位/简述等）全部为空？**
-LLM 生成目录时格式不标准。系统已内置兼容处理，若仍出现可打开「文件管理」检查 `Novel_directory.txt`，确认章节头为 `第X章 - 标题` 格式。
-
-**Q: 叙事DNA 分析后章节没有体现风格？**
-确认在 Step 1/2/3 各自的「叙事DNA风格」下拉框中选择了对应样式。叙事DNA 与文风仿写是两个独立的选项。
-
 ## 致谢
-部分代码参考了：https://github.com/YILING0013/AI_NovelGenerator
+
+部分早期代码参考了 [AI_NovelGenerator](https://github.com/YILING0013/AI_NovelGenerator)。
 
 ## License
 
