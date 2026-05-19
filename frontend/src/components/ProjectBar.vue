@@ -79,85 +79,79 @@ async function onCreate() {
 </script>
 
 <template>
-  <div class="flex items-center gap-3 flex-wrap">
-    <!-- 项目选择 -->
-    <div class="flex items-center gap-2">
-      <label class="text-[var(--color-gold-light)] text-sm font-medium whitespace-nowrap">当前项目</label>
+  <div class="project-bar">
+    <div class="project-selector">
+      <label class="project-label">当前项目</label>
       <select
         :value="projectStore.activeProject"
         @change="onSelectProject(($event.target as HTMLSelectElement).value)"
-        class="bg-[var(--color-spine-light)] text-[var(--color-parchment)] border border-[var(--color-gold-dark)] rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-gold)]"
+        class="project-select"
       >
         <option value="" disabled>— 选择项目 —</option>
         <option v-for="p in projectStore.projects" :key="p" :value="p">{{ p }}</option>
       </select>
     </div>
 
-    <!-- 新建项目按钮 -->
     <button
       @click="showCreate = !showCreate"
-      class="text-[var(--color-gold-light)] border border-[var(--color-gold-dark)] rounded-md px-3 py-1.5 text-sm hover:bg-[var(--color-spine-light)] transition-colors"
+      class="project-action"
       type="button"
     >
-      + 新建项目
+      新建
     </button>
 
-    <!-- 刷新发现项目 -->
     <button
       @click="onDiscover"
       :disabled="discovering"
-      class="text-[var(--color-gold-light)] border border-[var(--color-gold-dark)] rounded-md px-3 py-1.5 text-sm hover:bg-[var(--color-spine-light)] disabled:opacity-50 transition-colors"
+      class="project-action"
       type="button"
       title="扫描 output 目录，自动发现并注册已有项目"
     >
-      {{ discovering ? '扫描中...' : '刷新发现' }}
+      {{ discovering ? '扫描中...' : '发现' }}
     </button>
 
-    <!-- 删除项目按钮 -->
     <button
       v-if="projectStore.activeProject"
       @click="onDelete"
       :disabled="deleting"
-      class="text-red-400 border border-red-400/40 rounded-md px-3 py-1.5 text-sm hover:bg-red-400/10 disabled:opacity-50 transition-colors"
+      class="project-action danger"
       type="button"
     >
       {{ deleting ? '删除中...' : '删除项目' }}
     </button>
 
-    <!-- 状态消息 -->
-    <Transition name="fade">
-      <span v-if="statusMsg" class="text-[var(--color-gold-light)] text-xs">{{ statusMsg }}</span>
-    </Transition>
-
-    <!-- 新建项目表单（内联弹出） -->
     <Transition name="slide">
-      <div v-if="showCreate" class="w-full flex items-center gap-2 flex-wrap mt-1">
+      <div v-if="showCreate" class="project-create">
         <input
           v-model="newName"
           placeholder="项目名称"
-          class="bg-[var(--color-spine-light)] text-[var(--color-parchment)] border border-[var(--color-gold-dark)] rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-gold)] w-40"
+        class="project-input"
         />
         <input
           v-model="newPath"
           placeholder="输出路径（可选）"
-          class="bg-[var(--color-spine-light)] text-[var(--color-parchment)] border border-[var(--color-gold-dark)] rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-gold)] w-52"
+        class="project-input"
         />
         <button
           @click="onCreate"
           :disabled="creating"
-          class="bg-[var(--color-gold-dark)] text-[var(--color-ink)] rounded-md px-4 py-1.5 text-sm font-semibold hover:bg-[var(--color-gold)] disabled:opacity-50 transition-colors"
+          class="project-action primary"
           type="button"
         >
           {{ creating ? '创建中...' : '创建' }}
         </button>
         <button
           @click="showCreate = false"
-          class="text-[var(--color-parchment-dark)] text-sm hover:text-[var(--color-parchment)] transition-colors"
+          class="project-action"
           type="button"
         >
           取消
         </button>
       </div>
+    </Transition>
+
+    <Transition name="fade">
+      <span v-if="statusMsg" class="project-status">{{ statusMsg }}</span>
     </Transition>
   </div>
 </template>

@@ -22,6 +22,12 @@ const router = createRouter({
       meta: { title: '提示词方案' },
     },
     {
+      path: '/instructions',
+      name: 'instructions',
+      component: () => import('@/views/InstructionConfigView.vue'),
+      meta: { title: '指令配置' },
+    },
+    {
       path: '/styles',
       name: 'styles',
       component: () => import('@/views/StylesView.vue'),

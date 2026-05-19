@@ -1,28 +1,33 @@
 .btn-primary {
   padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
+  min-height: 2.5rem;
+  border-radius: 0.5rem;
   font-size: 0.875rem;
   font-weight: 600;
-  transition: background-color 0.15s;
-  background-color: var(--color-leather);
-  color: var(--color-parchment);
+  transition: background-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  background: linear-gradient(135deg, var(--color-leather), var(--color-leather-light));
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(15, 139, 141, 0.18);
   cursor: pointer;
 }
 .btn-primary:hover:not(:disabled) {
   background-color: var(--color-leather-light);
+  transform: translateY(-1px);
 }
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 .btn-sm {
   padding: 0.25rem 0.75rem;
-  border-radius: 0.25rem;
+  min-height: 2rem;
+  border-radius: 0.5rem;
   font-size: 0.75rem;
   font-weight: 500;
-  transition: background-color 0.15s;
+  transition: background-color 0.15s, box-shadow 0.15s;
   background-color: var(--color-leather);
-  color: var(--color-parchment);
+  color: #fff;
   cursor: pointer;
 }
 .btn-sm:hover:not(:disabled) {

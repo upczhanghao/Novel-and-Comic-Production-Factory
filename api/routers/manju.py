@@ -24,6 +24,7 @@ from api.image_service import (
     normalize_image_config,
     save_generated_image,
 )
+from api.manju_instruction_templates import render_manju_instruction
 from api.security import normalize_project_path, safe_join
 from api.schemas import (
     ManjuCharactersUpdateRequest,
@@ -31,6 +32,7 @@ from api.schemas import (
     ManjuImageConfigRequest,
     ManjuImageGenerateRequest,
     ManjuImagePromptImportRequest,
+    ManjuPromptEnhanceRequest,
     ManjuQueueCreateRequest,
     ManjuSettingsRequest,
     ManjuScriptAdaptRequest,
@@ -52,6 +54,10 @@ def _sse_response(gen):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _manju_instruction(key: str, **values: Any) -> str:
+    return render_manju_instruction(get_web_app().config, key, values)
 
 
 def _work_dir(filepath: str) -> str:
@@ -485,6 +491,137 @@ def _character_lock_context(filepath: str, fallback: str) -> str:
     return "\n\n".join(lines)
 
 
+DEFAULT_MANJU_NEGATIVE_PROMPT = (
+    "low quality, blurry, bad anatomy, distorted face, deformed hands, extra fingers, "
+    "extra limbs, duplicate character, inconsistent outfit, wrong hair color, wrong costume, "
+    "text, watermark, logo, cropped head, out of frame"
+)
+
+
+def _compact_text(*parts: Any) -> str:
+    text = "，".join(str(part).strip() for part in parts if str(part or "").strip())
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" ，,")
+
+
+def _visual_style_for(filepath: str) -> str:
+    return _load_settings(filepath).get(
+        "visual_style",
+        "vertical manhua panel, cinematic composition, consistent character design, high detail",
+    )
+
+
+def _negative_prompt(*parts: Any) -> str:
+    custom = ", ".join(str(part).strip() for part in parts if str(part or "").strip())
+    return f"{custom}, {DEFAULT_MANJU_NEGATIVE_PROMPT}" if custom else DEFAULT_MANJU_NEGATIVE_PROMPT
+
+
+def _find_character_cards(filepath: str, text: str) -> list[dict[str, Any]]:
+    cards = _load_characters_structured(filepath)
+    if not text:
+        return []
+    return [card for card in cards if card.get("name") and str(card.get("name")) in text]
+
+
+def _character_visual_lock(card: dict[str, Any]) -> str:
+    return _compact_text(
+        card.get("name"),
+        card.get("identity"),
+        card.get("appearance"),
+        card.get("costume"),
+        card.get("expression"),
+        card.get("actions"),
+        f"must keep unchanged: {card.get('do_not_change', '')}" if card.get("do_not_change") else "",
+    )
+
+
+def _build_character_image_prompt(filepath: str, card: dict[str, Any]) -> tuple[str, str]:
+    visual_style = _visual_style_for(filepath)
+    prompt = _compact_text(
+        "single full-body character standing portrait",
+        "one character only, head-to-toe view, entire body visible, clean readable silhouette",
+        _character_visual_lock(card),
+        "neutral standing pose, signature expression, simple clean background, no panels",
+        visual_style,
+        "high detail, sharp focus, professional concept art, consistent design for reuse",
+    )
+    return prompt, _negative_prompt(
+        card.get("prompt_negative"),
+        "close-up, bust portrait, multiple poses, split view, character sheet layout, multiple panels, multiple people, busy background",
+    )
+
+
+def _build_storyboard_image_prompt(filepath: str, row: dict[str, Any]) -> tuple[str, str]:
+    visual_style = _visual_style_for(filepath)
+    character_text = _compact_text(row.get("characters"), row.get("subject"), row.get("prompt_positive"))
+    locks = [_character_visual_lock(card) for card in _find_character_cards(filepath, character_text)]
+    lock_text = " | ".join(lock for lock in locks if lock)
+    prompt = _compact_text(
+        "vertical manhua storyboard frame, 9:16 composition",
+        row.get("camera"),
+        row.get("composition"),
+        row.get("subject"),
+        row.get("characters"),
+        lock_text,
+        row.get("location"),
+        row.get("light"),
+        row.get("continuity"),
+        visual_style,
+        "clear focal point, cinematic lighting, expressive face, dynamic but readable action",
+        "no speech bubbles unless explicitly requested",
+        row.get("prompt_positive"),
+    )
+    return prompt, _negative_prompt(row.get("prompt_negative"))
+
+
+def _quality_flags(prompt: str, negative: str) -> list[str]:
+    issues = []
+    checks = {
+        "缺少镜头/景别": r"(close-up|medium|wide|特写|近景|中景|远景|全景|景别)",
+        "缺少构图": r"(composition|构图|居中|三分法|俯拍|仰拍|侧逆光|对称|纵深)",
+        "缺少光线": r"(lighting|light|光|夜|晨|夕阳|霓虹|烛火|阴影)",
+        "缺少风格媒介": r"(manhua|manga|anime|comic|国漫|日漫|漫画|概念图|concept art)",
+    }
+    for label, pattern in checks.items():
+        if not re.search(pattern, prompt, re.IGNORECASE):
+            issues.append(label)
+    if len(prompt) < 120:
+        issues.append("提示词过短")
+    if not negative or len(negative) < 40:
+        issues.append("负向词不足")
+    return issues
+
+
+def _enhance_character_prompts(filepath: str, overwrite_locked: bool = False) -> tuple[int, list[dict[str, Any]]]:
+    cards = _load_characters_structured(filepath)
+    changed = 0
+    for card in cards:
+        if card.get("locked") and not overwrite_locked:
+            continue
+        prompt, negative = _build_character_image_prompt(filepath, card)
+        card["prompt_positive"] = prompt
+        card["prompt_negative"] = negative
+        card["prompt_quality_flags"] = _quality_flags(prompt, negative)
+        changed += 1
+    _save_characters_structured(filepath, cards)
+    return changed, cards
+
+
+def _enhance_storyboard_prompts(filepath: str, overwrite_locked: bool = False) -> tuple[int, list[dict[str, Any]]]:
+    rows = _load_storyboard_rows(filepath)
+    changed = 0
+    for row in rows:
+        if row.get("locked") and not overwrite_locked:
+            continue
+        prompt, negative = _build_storyboard_image_prompt(filepath, row)
+        row["prompt_positive"] = prompt
+        row["prompt_negative"] = negative
+        row["prompt_quality_flags"] = _quality_flags(prompt, negative)
+        changed += 1
+    _save_storyboard_rows(filepath, rows)
+    return changed, rows
+
+
 def _storyboard_rows_from_markdown(markdown: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     chapter_pattern = re.compile(r"(?ms)^#\s*第\s*(\d+)\s*章\s*([^\n（]*)[^\n]*\n(.*?)(?=^#\s*第\s*\d+\s*章|\Z)")
@@ -727,25 +864,16 @@ def _generate_script_adaptation_sync(llm_config_name: str, filepath: str, start_
     rename_rule = "允许根据漫剧传播效果重命名人物，但正文中只使用新名字，不要输出原名-新名对照表。" if rename_characters else "不得修改人物名称，必须沿用小说原名。"
     progress(0.03, desc="正在规划漫剧正文改编结构...")
 
-    outline_prompt = f"""你是小说改编策划。请把小说内容规划为可再次导入系统的漫剧小说正文目录。
-
-改编参数：
-- 目标剧本章节数：{target_chapters} 章
-- 人物名称规则：{rename_rule}
-- 剧情改编幅度：{adaptation_level}
-- 单章篇幅/节奏参考：{episode_duration}
-- 改编风格：{script_style}
-- 补充要求：{extra_guidance or "无"}
-
-硬性要求：
-1. 只输出 {target_chapters} 行目录，编号 1-{target_chapters}，不能多也不能少。
-2. 每行格式：第X章 标题｜本章剧情一句话
-3. 不要输出改编原则、人物表、说明、Markdown 表格、分镜、场次。
-4. 改编要增强冲突、反转、爽点、情绪钩子，但不能破坏主线逻辑。
-
-小说章节摘录：
-{source_digest}
-"""
+    outline_prompt = _manju_instruction(
+        "script_outline",
+        target_chapters=target_chapters,
+        rename_rule=rename_rule,
+        adaptation_level=adaptation_level,
+        episode_duration=episode_duration,
+        script_style=script_style,
+        extra_guidance=extra_guidance or "无",
+        source_digest=source_digest,
+    )
     outline = invoke_with_cleaning(llm, outline_prompt, progress=_relay_progress(progress, "正文目录："))
     save_string_to_txt(outline, _script_outline_path(filepath))
 
@@ -753,30 +881,18 @@ def _generate_script_adaptation_sync(llm_config_name: str, filepath: str, start_
     previous_script = ""
     for episode in range(1, target_chapters + 1):
         progress(0.08 + 0.88 * (episode - 1) / target_chapters, desc=f"正在改编第 {episode}/{target_chapters} 章漫剧剧本...")
-        episode_prompt = f"""你是小说改编作者。请根据目录和原文摘录，只创作第 {episode} 章的漫剧改编正文。
-
-硬性要求：
-1. 输出必须是可再次导入的 TXT 小说正文格式。
-2. 第一行必须且只能是章节标题，格式严格为：第{episode}章 标题
-3. 标题下一行开始直接写剧情正文，可以包含自然对白，但不要写“场次、画面说明、分镜提示、角色表、剧情节拍、旁白/字幕、情绪点、改编说明”等制作信息。
-4. 不要使用 Markdown 标题符号，不要输出列表，不要输出表格，不要解释。
-5. 人物名称规则：{rename_rule}
-6. 剧情改编幅度：{adaptation_level}。改编可以增强戏剧性，但必须保持主线因果清晰。
-7. 风格参考：{script_style}。重点是剧情可读、冲突清晰、适合后续模块继续生成角色图/场景图/分镜图。
-8. 结尾要有自然的章节钩子，但仍然写成小说正文。
-
-补充要求：
-{extra_guidance or "无"}
-
-改编目录：
-{_truncate(outline, 18000)}
-
-上一章正文结尾：
-{_truncate(previous_script, 5000) if previous_script else "暂无，这是第一章。"}
-
-小说章节摘录：
-{source_digest}
-"""
+        episode_prompt = _manju_instruction(
+            "script_episode",
+            episode=episode,
+            target_chapters=target_chapters,
+            rename_rule=rename_rule,
+            adaptation_level=adaptation_level,
+            script_style=script_style,
+            extra_guidance=extra_guidance or "无",
+            outline=_truncate(outline, 18000),
+            previous_script=_truncate(previous_script, 5000) if previous_script else "暂无，这是第一章。",
+            source_digest=source_digest,
+        )
         episode_script = invoke_with_cleaning(
             llm,
             episode_prompt,
@@ -1103,38 +1219,42 @@ def _collect_markdown_prompt_items(markdown: str, source_type: str, source_label
 
 def _manju_prompt_items(filepath: str, kind: str) -> list[dict[str, Any]]:
     if kind == "characters":
-        return [
-            {
+        items = []
+        for idx, card in enumerate(_load_characters_structured(filepath), 1):
+            prompt, negative = _build_character_image_prompt(filepath, card)
+            if not prompt:
+                continue
+            items.append({
                 "id": card.get("id") or card.get("name") or f"character_{idx}",
                 "title": f"角色卡｜{card.get('name') or idx}",
-                "prompt": card.get("prompt_positive", ""),
-                "negative_prompt": card.get("prompt_negative", ""),
+                "prompt": prompt,
+                "negative_prompt": negative,
                 "source_type": "manju_character",
                 "source_id": str(card.get("id") or card.get("name") or idx),
                 "source_label": "角色卡",
-            }
-            for idx, card in enumerate(_load_characters_structured(filepath), 1)
-            if card.get("prompt_positive")
-        ]
+            })
+        return items
     if kind == "scenes":
         path = os.path.join(_work_dir(filepath), "scenes.md")
         return _collect_markdown_prompt_items(_read_text(path) if os.path.exists(path) else "", "manju_scene", "场景图")
     if kind == "storyboards":
         rows = _load_storyboard_rows(filepath)
         if rows:
-            return [
-                {
+            items = []
+            for idx, row in enumerate(rows, 1):
+                prompt, negative = _build_storyboard_image_prompt(filepath, row)
+                if not prompt:
+                    continue
+                items.append({
                     "id": row.get("id") or f"shot_{idx}",
                     "title": f"分镜图｜第{row.get('chapter_num')}章｜镜{row.get('shot_no')}",
-                    "prompt": row.get("prompt_positive", ""),
-                    "negative_prompt": row.get("prompt_negative", ""),
+                    "prompt": prompt,
+                    "negative_prompt": negative,
                     "source_type": "manju_storyboard",
                     "source_id": str(row.get("id") or idx),
                     "source_label": "分镜图",
-                }
-                for idx, row in enumerate(rows, 1)
-                if row.get("prompt_positive")
-            ]
+                })
+            return items
         path = os.path.join(_work_dir(filepath), "storyboards.md")
         return _collect_markdown_prompt_items(_read_text(path) if os.path.exists(path) else "", "manju_storyboard", "分镜图")
     if kind == "all":
@@ -1156,6 +1276,27 @@ def import_manju_prompts_to_images(body: ManjuImagePromptImportRequest):
         "items": rows,
         "imported": len(items),
         "count": len(rows),
+    }
+
+
+@router.post("/manju/prompts/enhance")
+def enhance_manju_prompts(body: ManjuPromptEnhanceRequest):
+    changed = 0
+    result: dict[str, Any] = {}
+    if body.kind in ("characters", "all"):
+        count, cards = _enhance_character_prompts(body.filepath, body.overwrite_locked)
+        changed += count
+        result["characters"] = cards
+    if body.kind in ("storyboards", "all"):
+        count, rows = _enhance_storyboard_prompts(body.filepath, body.overwrite_locked)
+        changed += count
+        result["storyboards"] = rows
+    if body.kind not in ("characters", "storyboards", "all"):
+        raise HTTPException(status_code=400, detail="kind 只能是 characters/storyboards/all")
+    return {
+        "message": f"✅ 已增强 {changed} 条生图提示词",
+        "changed": changed,
+        **result,
     }
 
 
@@ -1288,6 +1429,9 @@ def continuity_check(filepath: str = "./output"):
             issues.append({"level": "warning", "shot_id": row.get("id"), "message": "缺少背景场景/地点，后续画面连续性较弱"})
         if not row.get("light"):
             issues.append({"level": "warning", "shot_id": row.get("id"), "message": "缺少光影色彩/时间信息"})
+        prompt, negative = _build_storyboard_image_prompt(filepath, row)
+        for flag in _quality_flags(prompt, negative):
+            issues.append({"level": "warning", "shot_id": row.get("id"), "message": f"生图提示词{flag}"})
         for name in mentioned - locked_names:
             issues.append({"level": "warning", "shot_id": row.get("id"), "message": f"角色“{name}”未锁定，可能发生外貌漂移"})
         if prev and row.get("chapter_num") == prev.get("chapter_num"):
@@ -1339,21 +1483,13 @@ def _resolve_image_prompt(body: ManjuImageGenerateRequest) -> str:
     if body.source_type == "character":
         for card in _load_characters_structured(body.filepath):
             if card.get("id") == body.source_id or card.get("name") == body.source_id:
-                return "\n".join([
-                    str(card.get("prompt_positive", "")),
-                    f"角色锁定：{card.get('appearance', '')}，{card.get('costume', '')}",
-                    f"负向：{card.get('prompt_negative', '')}",
-                ]).strip()
+                prompt, negative = _build_character_image_prompt(body.filepath, card)
+                return f"{prompt}\nNegative prompt: {negative}".strip()
     if body.source_type == "shot":
         for row in _load_storyboard_rows(body.filepath):
             if row.get("id") == body.source_id:
-                return "\n".join([
-                    str(row.get("prompt_positive", "")),
-                    f"画面主体：{row.get('subject', '')}",
-                    f"背景：{row.get('location', '')}",
-                    f"连续性：{row.get('continuity', '')}",
-                    f"负向：{row.get('prompt_negative', '')}",
-                ]).strip()
+                prompt, negative = _build_storyboard_image_prompt(body.filepath, row)
+                return f"{prompt}\nNegative prompt: {negative}".strip()
     raise HTTPException(status_code=400, detail="未找到可用于生成图片的提示词")
 
 
@@ -1412,21 +1548,12 @@ def _generate_characters_sync(llm_config_name: str, filepath: str, start_chapter
     progress(0.02, desc="正在识别小说角色总表...")
 
     def build_index_prompt(chapter_source: str, scope: str) -> str:
-        return f"""你是资深漫剧改编导演。请先根据小说摘录建立“角色索引”，用于后续分批生成角色卡。
-
-硬性要求：
-1. 尽量识别{scope}内所有会影响剧情或画面连续性的角色，包括主角、核心配角、反派、功能性角色。
-2. 不要把地点、势力、物品、章节名当成角色。
-3. 只输出角色索引，不要输出详细角色卡。
-4. 每行必须严格使用以下格式，方便程序读取：
-- 角色名｜重要度：主角/核心配角/反派/功能性角色｜身份：一句话身份｜首次/主要出场：章节号或章节名｜依据：原文线索简述
-
-补充要求：
-{extra_guidance or "无"}
-
-小说章节摘录：
-{chapter_source}
-"""
+        return _manju_instruction(
+            "character_index",
+            scope=scope,
+            extra_guidance=extra_guidance or "无",
+            chapter_source=chapter_source,
+        )
 
     if len(chapters) > 60:
         index_parts = []
@@ -1460,25 +1587,12 @@ def _generate_characters_sync(llm_config_name: str, filepath: str, start_chapter
 
     if not names:
         progress(0.2, desc="角色索引解析不稳定，改用完整角色库生成...")
-        fallback_prompt = f"""你是资深漫剧改编导演和角色设定师。请根据整本小说内容，整理适合“漫剧/短剧分镜/AI绘图”的角色资料库。
-
-要求：
-1. 识别所有重要角色，按主角、核心配角、反派、功能性角色分组。
-2. 每个角色必须包含：姓名/称谓、剧情身份、性格关键词、人物弧光、与其他角色关系、首次/主要出场章节、外貌固定设定、服装固定设定、表情气质、动作习惯、禁忌变化点。
-3. 为每个角色生成“角色卡提示词”，用于后续文生图，必须细致、稳定、可复用。
-4. 同一个角色的外貌、服装、气质要保持连续一致；如果原文缺失，请做合理改编并明确标注“改编补全”。
-5. 不得写“其余略”“后续同上”等省略表达。
-6. 输出 Markdown，中文为主，可保留关键英文绘图词。
-
-全局视觉风格：
-{visual_style}
-
-补充要求：
-{extra_guidance or "无"}
-
-小说章节摘录：
-{source}
-"""
+        fallback_prompt = _manju_instruction(
+            "character_fallback",
+            visual_style=visual_style,
+            extra_guidance=extra_guidance or "无",
+            source=source,
+        )
         result = invoke_with_cleaning(llm, fallback_prompt, progress=progress)
         _save_result(filepath, "characters.md", result)
         _save_characters_structured(filepath, _characters_from_markdown(result))
@@ -1493,47 +1607,15 @@ def _generate_characters_sync(llm_config_name: str, filepath: str, start_chapter
             0.30 + 0.64 * (batch_idx - 1) / total_batches,
             desc=f"正在生成角色卡第 {batch_idx}/{total_batches} 批：{batch_names}",
         )
-        card_prompt = f"""你是资深漫剧角色设定师。请只为“本批角色”生成细致角色信息与角色卡提示词。
-
-本批角色：
-{chr(10).join(f"- {name}" for name in batch)}
-
-硬性要求：
-1. 必须逐个输出本批全部角色，顺序与上方一致，不得合并、不得省略。
-2. 每个角色都要包含：剧情身份、性格关键词、人物弧光、与其他角色关系、首次/主要出场章节、外貌固定设定、服装固定设定、表情气质、动作习惯、禁忌变化点。
-3. 每个角色必须生成可复用的“角色卡提示词”，细到年龄感、脸型、发型发色、体型、服装材质/颜色、标志物、表情、气质、镜头偏好。
-4. 原文未明确的信息可以合理改编补全，但必须标注“改编补全”。
-5. 不得写“同上”“略”“其余角色类似”“后续继续”等省略表达。
-
-建议格式：
-## 角色名
-- 剧情身份：
-- 性格关键词：
-- 人物弧光：
-- 关系网络：
-- 出场章节：
-- 外貌固定设定：
-- 服装固定设定：
-- 表情气质：
-- 动作习惯：
-- 禁忌变化点：
-- 角色卡提示词：
-  - 正向提示词：
-  - 负向提示词：
-  - 连续性备注：
-
-全局视觉风格：
-{visual_style}
-
-补充要求：
-{extra_guidance or "无"}
-
-角色索引：
-{_truncate(index_result, 12000)}
-
-小说章节摘录：
-{source}
-"""
+        card_prompt = _manju_instruction(
+            "character_cards",
+            batch_names=batch_names,
+            batch_list=chr(10).join(f"- {name}" for name in batch),
+            visual_style=visual_style,
+            extra_guidance=extra_guidance or "无",
+            index_result=_truncate(index_result, 12000),
+            source=source,
+        )
         result = invoke_with_cleaning(
             llm, card_prompt, progress=_relay_progress(progress, f"角色卡第 {batch_idx}/{total_batches} 批：")
         )
@@ -1559,27 +1641,15 @@ def _generate_scenes_sync(llm_config_name: str, filepath: str, start_chapter: in
     all_output = []
     for idx, ch in enumerate(chapters, 1):
         progress(idx / max(len(chapters), 1), desc=f"正在生成第 {ch['num']} 章场景图提示词...")
-        prompt = f"""你是漫剧美术导演。请把下面章节拆成适合 AI 绘图/场景概念图的“场景图提示词清单”。
-
-输出要求：
-- 每章列出 6-12 个关键场景，不要遗漏主要剧情转场。
-- 每个场景包含：场景编号、剧情作用、地点、时间/光线、环境元素、出现角色、人物站位、情绪氛围、镜头景别、正向绘图提示词、负向提示词。
-- 必须严格引用下方“角色一致性锁定表”，保持角色外貌、服装、气质、禁忌变化点一致。
-- 不要写成小说正文，要写成可直接给绘图模型使用的提示词。
-
-全局视觉风格：
-{visual_style}
-
-角色一致性锁定表：
-{_truncate(characters, 12000)}
-
-补充要求：
-{extra_guidance or "无"}
-
-章节：
-第{ch['num']}章 {ch['title']}
-{_truncate(ch['content'], 12000)}
-"""
+        prompt = _manju_instruction(
+            "scenes",
+            chapter_num=ch["num"],
+            chapter_title=ch["title"],
+            chapter_content=_truncate(ch["content"], 12000),
+            visual_style=visual_style,
+            characters=_truncate(characters, 12000),
+            extra_guidance=extra_guidance or "无",
+        )
         result = invoke_with_cleaning(
             llm,
             prompt,
@@ -1619,52 +1689,21 @@ def _generate_storyboards_sync(llm_config_name: str, filepath: str, start_chapte
             )
             previous_context = _truncate("\n\n".join(chapter_parts[-2:]), 3500)
             chapter_scenes = _chapter_markdown_section(scenes, int(ch["num"]), 8000)
-            prompt = f"""你是漫剧分镜导演。请根据章节内容生成连续分镜图提示词。
-
-硬性要求：
-1. 本章总分镜数为 {shots_per_chapter}。本次只输出全局编号 {shot_start}-{shot_end}，共 {batch_count} 个分镜，不能多也不能少。
-2. 每个分镜必须使用全局编号，不要从 1 重新编号，除非本批从 1 开始。
-3. 分镜必须覆盖完整剧情：开场交代、冲突推进、关键动作、情绪反应、信息揭示、结尾钩子。
-4. 本批要承接已完成分镜，必须严格引用“角色一致性锁定表”，保持角色、服饰、道具、空间方向、情绪递进连续。
-5. 不得写“略”“同上”“后续继续”“省略若干镜头”等省略表达。
-6. 如果本批包含最后一个镜头（编号 {shots_per_chapter}），最后一镜必须形成本章结尾钩子或情绪落点。
-
-每个分镜包含：
-- 镜号
-- 对应剧情
-- 画面主体
-- 角色动作/表情
-- 镜头景别
-- 机位/构图
-- 背景场景
-- 光影色彩
-- 台词/字幕建议
-- 正向绘图提示词
-- 负向提示词
-- 连续性备注
-
-输出格式：
-使用 Markdown 分镜清单，必须逐条列出 {shot_start}-{shot_end}。
-
-已完成的本章前序分镜：
-{previous_context or "暂无，这是本章第一批分镜。"}
-
-全局视觉风格：
-{visual_style}
-
-角色一致性锁定表：
-{_truncate(characters, 12000)}
-
-本章已有场景提示词：
-{chapter_scenes or "尚未生成本章场景图提示词，请直接根据章节内容拆分。"}
-
-补充要求：
-{extra_guidance or "无"}
-
-章节：
-第{ch['num']}章 {ch['title']}
-{_truncate(ch['content'], 14000)}
-"""
+            prompt = _manju_instruction(
+                "storyboards",
+                shots_per_chapter=shots_per_chapter,
+                shot_start=shot_start,
+                shot_end=shot_end,
+                batch_count=batch_count,
+                previous_context=previous_context or "暂无，这是本章第一批分镜。",
+                visual_style=visual_style,
+                characters=_truncate(characters, 12000),
+                chapter_scenes=chapter_scenes or "尚未生成本章场景图提示词，请直接根据章节内容拆分。",
+                extra_guidance=extra_guidance or "无",
+                chapter_num=ch["num"],
+                chapter_title=ch["title"],
+                chapter_content=_truncate(ch["content"], 14000),
+            )
             result = invoke_with_cleaning(
                 llm,
                 prompt,

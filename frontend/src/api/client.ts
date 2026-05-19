@@ -61,6 +61,11 @@ export const configApi = {
     api.post('/config/user_profile/extract', { text, llm_config_name }),
   appendProfile: (preferences: string) =>
     api.post('/config/user_profile/append', { preferences }),
+  listManjuInstructions: () => api.get('/config/instructions/manju'),
+  saveManjuInstruction: (key: string, content: string) =>
+    api.put(`/config/instructions/manju/${encodeURIComponent(key)}`, { content }),
+  resetManjuInstruction: (key: string) =>
+    api.post(`/config/instructions/manju/${encodeURIComponent(key)}/reset`),
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────
@@ -300,6 +305,10 @@ export const imagesApi = {
   list: (filepath: string) => api.get('/images/list', { params: { filepath } }),
   prompts: (filepath: string) => api.get('/images/prompts', { params: { filepath } }),
   importPrompts: (body: Record<string, unknown>) => api.post('/images/prompts/import', body),
+  deletePrompt: (id: string, filepath: string) =>
+    api.delete(`/images/prompts/${encodeURIComponent(id)}`, { params: { filepath } }),
+  deleteRecord: (id: string, filepath: string, deleteFile = true) =>
+    api.delete(`/images/records/${encodeURIComponent(id)}`, { params: { filepath, delete_file: deleteFile } }),
 }
 
 // ── Brainstorm ───────────────────────────────────────────────────────────────
@@ -322,6 +331,7 @@ export const manjuApi = {
   saveStyle: (body: Record<string, unknown>) => api.post('/manju/styles', body),
   saveImageConfig: (body: Record<string, unknown>) => api.put('/manju/image-config', body),
   generateImage: (body: Record<string, unknown>) => api.post('/manju/images/generate', body, { timeout: 300000 }),
+  enhancePrompts: (body: Record<string, unknown>) => api.post('/manju/prompts/enhance', body, { timeout: 180000 }),
   continuityCheck: (filepath: string) => api.get('/manju/continuity-check', { params: { filepath } }),
   stats: (filepath: string) => api.get('/manju/stats', { params: { filepath } }),
   createQueue: (body: Record<string, unknown>) => api.post('/manju/queue', body),

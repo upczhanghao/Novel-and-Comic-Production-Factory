@@ -39,6 +39,7 @@ type CharacterCard = {
   costume?: string
   prompt_positive?: string
   prompt_negative?: string
+  prompt_quality_flags?: string[]
   [key: string]: unknown
 }
 
@@ -53,6 +54,7 @@ type StoryboardShot = {
   light?: string
   prompt_positive?: string
   prompt_negative?: string
+  prompt_quality_flags?: string[]
   continuity?: string
   image_path?: string
   image_url?: string
@@ -114,6 +116,14 @@ const scriptAdaptationLevel = ref('中度改编')
 const scriptEpisodeDuration = ref('3-5分钟')
 const scriptStyle = ref('竖屏漫剧，强钩子，快节奏，适合后续分镜和AI绘图')
 const scriptGuidance = ref('')
+const enhancingPrompts = ref(false)
+const pipelineSteps = computed(() => [
+  { name: '剧本', done: Boolean(scriptAdapt.value.result), hint: '先把小说改成可拍的竖屏漫剧正文' },
+  { name: '角色锁定', done: characterCards.value.length > 0, hint: '确认外貌、服装、禁忌变化点' },
+  { name: '场景库', done: Boolean(scenes.value.result), hint: '沉淀可复用地点和光影气氛' },
+  { name: '分镜表', done: storyboardShots.value.length > 0, hint: '把剧情拆成可执行镜头' },
+  { name: '生图提示词', done: storyboardShots.value.some((shot) => shot.prompt_positive), hint: '增强后再导入图片模块或单镜生图' },
+])
 
 const filepath = computed(() => projectStore.filepath)
 const chapterOptions = computed(() => chapters.value.map((c) => ({ value: c.num, label: `第${c.num}章 ${c.title}` })))
@@ -365,6 +375,25 @@ async function importImagePrompts(kind: string) {
   }
 }
 
+async function enhancePrompts(kind = 'all') {
+  enhancingPrompts.value = true
+  dataMsg.value = '正在增强生图提示词...'
+  try {
+    const res = await manjuApi.enhancePrompts({
+      filepath: filepath.value,
+      kind,
+      overwrite_locked: false,
+    })
+    if (res.data.characters) characterCards.value = res.data.characters
+    if (res.data.storyboards) storyboardShots.value = res.data.storyboards
+    dataMsg.value = res.data.message
+  } catch (e: unknown) {
+    dataMsg.value = `❌ 提示词增强失败：${(e as Error).message}`
+  } finally {
+    enhancingPrompts.value = false
+  }
+}
+
 async function runContinuityCheck() {
   const res = await manjuApi.continuityCheck(filepath.value)
   continuityIssues.value = res.data.issues ?? []
@@ -452,12 +481,36 @@ onMounted(async () => {
 watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraGuidance], () => {
   if (appliedSettings.value && settingsDirty.value) settingsMsg.value = '设置已修改，请点击保存设置后再生成'
 })
+
+watch(() => configStore.llmChoices.slice(), (choices) => {
+  if (!choices.length) {
+    llmConfig.value = ''
+    return
+  }
+  if (!llmConfig.value || !choices.includes(llmConfig.value)) {
+    llmConfig.value = choices[0]
+  }
+})
+
+watch(() => configStore.imageChoices.slice(), (choices) => {
+  if (!choices.length) {
+    selectedImageConfig.value = ''
+    return
+  }
+  if (!selectedImageConfig.value || !choices.includes(selectedImageConfig.value)) {
+    selectedImageConfig.value = choices[0]
+  }
+})
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <div class="flex items-center justify-between gap-4 flex-wrap">
+  <div class="module-page space-y-5">
+    <div class="module-toolbar">
       <h2 class="text-2xl font-bold" style="color: var(--color-ink)">🎬 漫剧制作</h2>
+      <div>
+        <div class="module-kicker">Comic Studio</div>
+        <div class="module-subtitle">小说导入、剧本改编、角色卡、场景图与分镜提示词的一体化制片台。</div>
+      </div>
       <button
         @click="loadStatus"
         class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm hover:bg-white transition-colors"
@@ -467,9 +520,30 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
       </button>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-5">
-      <aside class="space-y-5">
-        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
+    <section class="module-panel p-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+        <div
+          v-for="(step, idx) in pipelineSteps"
+          :key="step.name"
+          class="module-status"
+          :class="step.done ? 'success' : ''"
+        >
+          <div class="text-xs text-[var(--color-ink-light)]">Step {{ idx + 1 }}</div>
+          <div class="font-semibold text-sm" :class="step.done ? 'text-green-800' : 'text-[var(--color-leather)]'">
+            {{ step.done ? '已完成 · ' : '' }}{{ step.name }}
+          </div>
+          <div class="text-xs text-[var(--color-ink-light)] mt-1 leading-5">{{ step.hint }}</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="module-grid wide-aside">
+      <aside class="space-y-4 module-aside-sticky">
+        <section class="module-panel p-4 space-y-4">
+          <div>
+            <div class="module-panel-title">输入与模型</div>
+            <div class="module-panel-caption">先选择模型并导入 TXT，生成章节目录后进入后续流程。</div>
+          </div>
           <div>
             <label class="block text-xs text-[var(--color-ink-light)] mb-1">LLM 配置</label>
             <select v-model="llmConfig" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
@@ -505,7 +579,11 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
           </div>
         </section>
 
-        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
+        <section class="module-panel p-4 space-y-4">
+          <div>
+            <div class="module-panel-title">范围与视觉约束</div>
+            <div class="module-panel-caption">控制章节范围、镜头数量和全局画面风格。</div>
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-[var(--color-ink-light)] mb-1">起始章节</label>
@@ -568,10 +646,10 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
           </div>
         </section>
 
-        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4">
-          <h3 class="font-semibold text-[var(--color-leather)] mb-3">章节目录</h3>
-          <div class="max-h-80 overflow-auto divide-y divide-[var(--color-parchment)]">
-            <div v-for="ch in chapters" :key="ch.num" class="py-2 text-sm">
+        <section class="module-panel p-4">
+          <div class="module-panel-title mb-3">章节目录</div>
+          <div class="max-h-80 overflow-auto module-list pr-1">
+            <div v-for="ch in chapters" :key="ch.num" class="module-list-item px-3 py-2 text-sm">
               <div class="font-medium text-[var(--color-ink)]">第{{ ch.num }}章 {{ ch.title }}</div>
               <div class="text-xs text-[var(--color-ink-light)]">{{ ch.chars }} 字</div>
             </div>
@@ -581,10 +659,13 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
       </aside>
 
       <main class="space-y-5">
-        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <h3 class="font-semibold text-[var(--color-leather)]">小说改编漫剧剧本</h3>
-            <div class="flex flex-wrap gap-2">
+        <section class="module-panel space-y-4 overflow-hidden">
+          <div class="module-panel-header">
+            <div>
+              <h3 class="module-panel-title">小说改编漫剧剧本</h3>
+              <p class="module-panel-caption">将原文重构为更适合短剧节奏的章节脚本。</p>
+            </div>
+            <div class="module-action-row">
               <button
                 @click="generateScriptAdaptation"
                 :disabled="scriptAdapt.running || !canGenerate"
@@ -605,7 +686,7 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          <div class="px-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <div>
               <label class="block text-xs text-[var(--color-ink-light)] mb-1">改编章节数</label>
               <input v-model.number="scriptTargetChapters" type="number" min="1" max="120" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
@@ -629,22 +710,27 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
             </label>
           </div>
 
-          <div>
+          <div class="px-4">
             <label class="block text-xs text-[var(--color-ink-light)] mb-1">剧本风格</label>
             <textarea v-model="scriptStyle" rows="2" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" />
           </div>
-          <div>
+          <div class="px-4">
             <label class="block text-xs text-[var(--color-ink-light)] mb-1">剧本改编补充要求</label>
             <textarea v-model="scriptGuidance" rows="2" placeholder="例如：加强女主戏份、弱化支线、每章结尾必须反转..." class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" />
           </div>
 
-          <StreamOutput v-bind="scriptAdapt" placeholder="改编后的漫剧剧本将在此显示，可导出 TXT..." />
+          <div class="px-4 pb-4">
+            <StreamOutput v-bind="scriptAdapt" placeholder="改编后的漫剧剧本将在此显示，可导出 TXT..." />
+          </div>
         </section>
 
-        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-3">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <h3 class="font-semibold text-[var(--color-leather)]">角色信息与角色卡提示词</h3>
-            <div class="flex flex-wrap gap-2">
+        <section class="module-panel space-y-3 overflow-hidden">
+          <div class="module-panel-header">
+            <div>
+              <h3 class="module-panel-title">角色信息与角色卡提示词</h3>
+              <p class="module-panel-caption">沉淀角色设定与单张全身角色图提示词。</p>
+            </div>
+            <div class="module-action-row">
               <button @click="exportPromptContent('characters', 'md')" :disabled="!characters.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
               <button @click="exportPromptContent('characters', 'txt')" :disabled="!characters.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 TXT</button>
               <button @click="importImagePrompts('characters')" :disabled="!characters.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导入生图</button>
@@ -659,13 +745,18 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
               </button>
             </div>
           </div>
-          <StreamOutput v-bind="characters" placeholder="角色信息、外貌设定和角色卡提示词将在此显示..." />
+          <div class="p-4 pt-0">
+            <StreamOutput v-bind="characters" placeholder="角色信息、外貌设定和角色卡提示词将在此显示..." />
+          </div>
         </section>
 
-        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-3">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <h3 class="font-semibold text-[var(--color-leather)]">章节场景图提示词</h3>
-            <div class="flex flex-wrap gap-2">
+        <section class="module-panel space-y-3 overflow-hidden">
+          <div class="module-panel-header">
+            <div>
+              <h3 class="module-panel-title">章节场景图提示词</h3>
+              <p class="module-panel-caption">为章节主场景生成稳定的环境、氛围和构图描述。</p>
+            </div>
+            <div class="module-action-row">
               <button @click="exportPromptContent('scenes', 'md')" :disabled="!scenes.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
               <button @click="exportPromptContent('scenes', 'txt')" :disabled="!scenes.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 TXT</button>
               <button @click="importImagePrompts('scenes')" :disabled="!scenes.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导入生图</button>
@@ -680,13 +771,18 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
               </button>
             </div>
           </div>
-          <StreamOutput v-bind="scenes" placeholder="每章关键场景、镜头氛围和文生图提示词将在此显示..." />
+          <div class="p-4 pt-0">
+            <StreamOutput v-bind="scenes" placeholder="每章关键场景、镜头氛围和文生图提示词将在此显示..." />
+          </div>
         </section>
 
-        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-3">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <h3 class="font-semibold text-[var(--color-leather)]">章节分镜图提示词</h3>
-            <div class="flex flex-wrap gap-2">
+        <section class="module-panel space-y-3 overflow-hidden">
+          <div class="module-panel-header">
+            <div>
+              <h3 class="module-panel-title">章节分镜图提示词</h3>
+              <p class="module-panel-caption">按镜头拆解主体、景别、动作和连续性。</p>
+            </div>
+            <div class="module-action-row">
               <button @click="exportPromptContent('storyboards', 'md')" :disabled="!storyboards.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
               <button @click="exportPromptContent('storyboards', 'txt')" :disabled="!storyboards.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 TXT</button>
               <button @click="importImagePrompts('storyboards')" :disabled="!storyboards.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导入生图</button>
@@ -701,41 +797,56 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
               </button>
             </div>
           </div>
-          <StreamOutput v-bind="storyboards" placeholder="按用户指定数量生成的连续分镜图提示词将在此显示..." />
+          <div class="p-4 pt-0">
+            <StreamOutput v-bind="storyboards" placeholder="按用户指定数量生成的连续分镜图提示词将在此显示..." />
+          </div>
         </section>
 
-        <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <h3 class="font-semibold text-[var(--color-leather)]">制片数据与连续性</h3>
-            <div class="flex flex-wrap gap-2">
+        <section class="module-panel space-y-4 overflow-hidden">
+          <div class="module-panel-header">
+            <div>
+              <h3 class="module-panel-title">制片数据与连续性</h3>
+              <p class="module-panel-caption">编辑角色锁定、分镜表、队列和一致性检查结果。</p>
+            </div>
+            <div class="module-action-row">
               <button @click="refreshStructuredData" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">刷新数据</button>
               <button @click="runContinuityCheck" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">连续性检查</button>
               <button @click="loadStats" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">出场统计</button>
               <button @click="createQueue" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">创建批量队列</button>
+              <button
+                @click="enhancePrompts('all')"
+                :disabled="enhancingPrompts || (!characterCards.length && !storyboardShots.length)"
+                class="px-3 py-2 rounded-md border border-[var(--color-leather)] text-[var(--color-leather)] text-sm disabled:opacity-50"
+                type="button"
+              >
+                {{ enhancingPrompts ? '增强中...' : '增强全部提示词' }}
+              </button>
             </div>
           </div>
           <div
             v-if="dataMsg"
-            class="text-sm"
+            class="mx-4 text-sm module-status"
             :class="dataMsg.startsWith('✅') ? 'text-green-700' : dataMsg.startsWith('❌') ? 'text-red-600' : 'text-[var(--color-ink-light)]'"
           >
             {{ dataMsg }}
           </div>
 
-          <div class="flex flex-wrap gap-2">
+          <div class="px-4 module-action-row">
             <button @click="exportAssets('characters', 'json')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">角色 JSON</button>
             <button @click="exportAssets('storyboards', 'csv')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">分镜 CSV</button>
             <button @click="exportAssets('storyboards', 'xlsx')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">分镜 Excel</button>
             <button @click="exportAssets('all', 'json')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">全部 JSON</button>
+            <button @click="enhancePrompts('characters')" :disabled="enhancingPrompts || !characterCards.length" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">增强角色提示词</button>
+            <button @click="enhancePrompts('storyboards')" :disabled="enhancingPrompts || !storyboardShots.length" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">增强分镜提示词</button>
             <button @click="importImagePrompts('all')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">全部导入生图</button>
           </div>
 
-          <div>
+          <div class="px-4">
             <div class="flex items-center justify-between mb-2">
               <h4 class="text-sm font-semibold text-[var(--color-ink)]">角色一致性锁定</h4>
               <button @click="saveCharacterCards" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">保存角色锁定</button>
             </div>
-            <div class="overflow-auto max-h-96 border border-[var(--color-parchment-darker)] rounded-md">
+            <div class="data-table-shell max-h-96">
               <table class="min-w-[980px] w-full text-xs">
                 <thead class="bg-[var(--color-parchment)] sticky top-0">
                   <tr>
@@ -754,7 +865,12 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
                     <td class="p-2"><textarea v-model="card.identity" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
                     <td class="p-2"><textarea v-model="card.appearance" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
                     <td class="p-2"><textarea v-model="card.costume" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
-                    <td class="p-2"><textarea v-model="card.prompt_positive" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2">
+                      <textarea v-model="card.prompt_positive" rows="3" class="w-full border rounded px-2 py-1 resize-y" />
+                      <div v-if="card.prompt_quality_flags?.length" class="mt-1 text-[10px] text-amber-700">
+                        {{ card.prompt_quality_flags.join(' / ') }}
+                      </div>
+                    </td>
                   </tr>
                   <tr v-if="!characterCards.length"><td colspan="6" class="p-3 text-[var(--color-ink-light)]">暂无结构化角色卡，生成角色卡后点击刷新数据。</td></tr>
                 </tbody>
@@ -762,12 +878,12 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
             </div>
           </div>
 
-          <div>
+          <div class="px-4">
             <div class="flex items-center justify-between mb-2">
               <h4 class="text-sm font-semibold text-[var(--color-ink)]">分镜表格编辑器</h4>
               <button @click="saveStoryboardShots" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">保存分镜表</button>
             </div>
-            <div class="overflow-auto max-h-[520px] border border-[var(--color-parchment-darker)] rounded-md">
+            <div class="data-table-shell max-h-[520px]">
               <table class="min-w-[1180px] w-full text-xs">
                 <thead class="bg-[var(--color-parchment)] sticky top-0">
                   <tr>
@@ -790,7 +906,12 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
                     <td class="p-2"><textarea v-model="shot.subject" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
                     <td class="p-2"><textarea v-model="shot.characters" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
                     <td class="p-2"><textarea v-model="shot.location" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
-                    <td class="p-2"><textarea v-model="shot.prompt_positive" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
+                    <td class="p-2">
+                      <textarea v-model="shot.prompt_positive" rows="3" class="w-full border rounded px-2 py-1 resize-y" />
+                      <div v-if="shot.prompt_quality_flags?.length" class="mt-1 text-[10px] text-amber-700">
+                        {{ shot.prompt_quality_flags.join(' / ') }}
+                      </div>
+                    </td>
                     <td class="p-2"><textarea v-model="shot.continuity" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
                     <td class="p-2">
                       <div class="flex flex-col gap-1">
@@ -810,8 +931,8 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
             </div>
           </div>
 
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div>
+          <div class="px-4 pb-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div class="module-status">
               <h4 class="text-sm font-semibold text-[var(--color-ink)] mb-2">分镜生图</h4>
               <div class="grid grid-cols-1 gap-2 text-sm">
                 <select v-model="selectedImageConfig" class="border rounded px-2 py-1">
@@ -828,7 +949,7 @@ watch([llmConfig, startChapter, endChapter, shotsPerChapter, visualStyle, extraG
               </div>
             </div>
 
-            <div>
+            <div class="module-status">
               <h4 class="text-sm font-semibold text-[var(--color-ink)] mb-2">检查/统计/队列</h4>
               <div class="max-h-52 overflow-auto text-xs space-y-1">
                 <div v-for="issue in continuityIssues" :key="String(issue.shot_id) + String(issue.message)" class="border-b border-[var(--color-parchment)] py-1">

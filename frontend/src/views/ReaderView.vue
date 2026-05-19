@@ -101,16 +101,23 @@ watch(() => projectStore.filepath, loadChapterList)
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-6 space-y-4">
+  <div class="module-page space-y-4">
     <h2 class="text-2xl font-bold" style="color: var(--color-ink)">📖 小说阅读</h2>
 
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+    <div class="module-toolbar">
+      <div>
+        <div class="module-kicker">Reader</div>
+        <div class="module-subtitle">按章节阅读生成结果，支持字号调节和全书模式。</div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-4">
       <!-- 左侧：章节列表 -->
       <div
-        class="lg:col-span-1 rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden"
+        class="module-panel overflow-hidden module-aside-sticky"
       >
         <div
-          class="px-4 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)] flex items-center justify-between"
+          class="module-panel-header"
         >
           <span class="font-medium text-sm text-[var(--color-leather)]">章节列表</span>
           <button
@@ -136,7 +143,7 @@ watch(() => projectStore.filepath, loadChapterList)
               v-for="ch in chapters"
               :key="ch.num"
               @click="loadChapter(ch.num)"
-              class="w-full text-left px-4 py-2.5 text-sm hover:bg-[var(--color-parchment)] transition-colors flex items-center justify-between gap-2 border-b border-[var(--color-parchment-dark)]"
+              class="w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between gap-2 border-b border-[var(--color-parchment-dark)]"
               :class="
                 currentChapter === ch.num
                   ? 'bg-[var(--color-parchment)] font-medium text-[var(--color-leather)]'
@@ -164,11 +171,11 @@ watch(() => projectStore.filepath, loadChapterList)
 
       <!-- 右侧：阅读区 -->
       <div
-        class="lg:col-span-3 rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden flex flex-col"
+        class="module-panel reader-canvas overflow-hidden flex flex-col"
       >
         <!-- 工具栏 -->
         <div
-          class="px-4 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)] flex items-center justify-between flex-wrap gap-2"
+          class="module-panel-header"
         >
           <span class="font-medium text-sm text-[var(--color-leather)]">
             {{

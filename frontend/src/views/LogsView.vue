@@ -127,11 +127,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto px-4 py-6 space-y-4">
+  <div class="module-page space-y-4">
     <h2 class="text-2xl font-bold" style="color: var(--color-ink)">📜 日志</h2>
 
     <!-- 标签页切换 -->
-    <div class="flex gap-1 border-b border-[var(--color-parchment-darker)]">
+    <div class="module-toolbar">
+      <div>
+        <div class="module-kicker">Diagnostics</div>
+        <div class="module-subtitle">查看运行日志、Prompt 历史、模型响应和调试信息。</div>
+      </div>
+    <div class="studio-segment">
       <button
         v-for="tab in [{ key: 'logs', label: '运行日志' }, { key: 'prompts', label: 'Prompt 历史' }]"
         :key="tab.key"
@@ -150,10 +155,11 @@ onMounted(() => {
         >{{ promptTotal }}</span>
       </button>
     </div>
+    </div>
 
     <!-- ── 运行日志 ──────────────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'logs'" class="space-y-3">
-      <div class="flex items-center gap-2 flex-wrap">
+      <div class="module-action-row">
         <label class="text-sm text-[var(--color-ink-light)]">显示最后</label>
         <input
           v-model.number="logTailLines" type="number" min="10" max="5000"
@@ -171,8 +177,8 @@ onMounted(() => {
       </div>
 
       <div
-        class="rounded-xl border border-[var(--color-parchment-darker)] overflow-auto font-mono text-xs leading-relaxed"
-        style="background-color: var(--color-spine); color: var(--color-parchment-dark); max-height: calc(100vh - 220px); min-height: 400px;"
+        class="code-console rounded-xl overflow-auto font-mono text-xs leading-relaxed"
+        style="max-height: calc(100vh - 220px); min-height: 400px;"
       >
         <div v-if="logLoading" class="p-4 italic opacity-50">加载中…</div>
         <pre v-else-if="logContent" class="p-4 whitespace-pre-wrap">{{ logContent }}</pre>
@@ -183,7 +189,7 @@ onMounted(() => {
     <!-- ── Prompt 历史 ───────────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'prompts'" class="space-y-3">
       <!-- 工具栏 -->
-      <div class="flex items-center gap-2 flex-wrap">
+      <div class="module-action-row">
         <input
           v-model="promptSearch"
           @keyup.enter="loadPrompts"
@@ -220,7 +226,7 @@ onMounted(() => {
       <!-- 空状态 -->
       <div
         v-else-if="promptRecords.length === 0"
-        class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-12 text-center"
+        class="module-panel p-12 text-center"
       >
         <p class="text-[var(--color-ink-light)] text-sm">
           {{ promptSearch ? '未找到匹配记录' : '暂无 Prompt 历史。生成内容后，记录将在此显示。' }}
@@ -232,7 +238,7 @@ onMounted(() => {
         <div
           v-for="(record, i) in promptRecords"
           :key="i"
-          class="rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden"
+          class="module-panel overflow-hidden"
         >
           <!-- 记录头部 -->
           <div
@@ -313,8 +319,8 @@ onMounted(() => {
                   </button>
                 </div>
                 <pre
-                  class="text-xs font-mono whitespace-pre-wrap leading-relaxed rounded-lg p-3 overflow-auto"
-                  style="background-color: var(--color-spine); color: var(--color-parchment-dark); max-height: 400px"
+                  class="code-console text-xs font-mono whitespace-pre-wrap leading-relaxed rounded-lg p-3 overflow-auto"
+                  style="max-height: 400px"
                 >{{ record.prompt }}</pre>
               </div>
 

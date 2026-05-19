@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { stylesApi, postSSE } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
 import StreamOutput from '@/components/StreamOutput.vue'
@@ -269,10 +269,30 @@ onMounted(async () => {
     authorRefEmbConfig.value = configStore.embeddingChoices[0]
   }
 })
+
+watch(() => configStore.llmChoices.slice(), (choices) => {
+  if (!choices.length) {
+    analyzeLLM.value = ''
+    return
+  }
+  if (!analyzeLLM.value || !choices.includes(analyzeLLM.value)) {
+    analyzeLLM.value = choices[0]
+  }
+})
+
+watch(() => configStore.embeddingChoices.slice(), (choices) => {
+  if (!choices.length) {
+    authorRefEmbConfig.value = ''
+    return
+  }
+  if (!authorRefEmbConfig.value || !choices.includes(authorRefEmbConfig.value)) {
+    authorRefEmbConfig.value = choices[0]
+  }
+})
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+  <div class="module-page space-y-5">
     <h2 class="text-2xl font-bold" style="color: var(--color-ink)">🎨 文风与叙事DNA</h2>
 
     <Transition name="fade">
@@ -282,8 +302,13 @@ onMounted(async () => {
       </div>
     </Transition>
 
-    <!-- 全局 LLM 配置 -->
-    <div class="flex items-center gap-3">
+    <div class="module-toolbar">
+      <div>
+        <div class="module-kicker">Style DNA</div>
+        <div class="module-subtitle">管理文风指令、叙事 DNA、作者参考库和校准流程。</div>
+      </div>
+      <!-- 全局 LLM 配置 -->
+      <div class="module-action-row">
       <label class="text-xs text-[var(--color-ink-light)] whitespace-nowrap">LLM 配置</label>
       <select v-model="analyzeLLM" class="border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm flex-1 max-w-xs">
         <option v-for="c in configStore.llmChoices" :key="c" :value="c">{{ c }}</option>
@@ -292,12 +317,16 @@ onMounted(async () => {
         <input type="checkbox" v-model="unlock" class="accent-amber-600" />
         内容解锁
       </label>
+      </div>
     </div>
 
     <!-- 文风列表 + 编辑 -->
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-5 space-y-4">
-      <h3 class="font-semibold text-[var(--color-leather)]">文风库</h3>
-      <div class="flex gap-2 flex-wrap">
+    <div class="module-panel p-5 space-y-4">
+      <div>
+        <h3 class="module-panel-title">文风库</h3>
+        <p class="module-panel-caption">选择文风后，可编辑摘要、完整报告和三层叙事指令。</p>
+      </div>
+      <div class="module-action-row">
         <select v-model="selectedStyle" @change="loadStyle(selectedStyle)"
           class="border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm flex-1">
           <option value="">— 选择文风 —</option>
@@ -396,12 +425,12 @@ onMounted(async () => {
     </div>
 
     <!-- 迭代校准 -->
-    <div v-if="selectedStyle" class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-5 space-y-4">
-      <h3 class="font-semibold text-[var(--color-leather)]">迭代校准（图灵盲测）</h3>
+    <div v-if="selectedStyle" class="module-panel p-5 space-y-4">
+      <h3 class="module-panel-title">迭代校准（图灵盲测）</h3>
       <p class="text-sm text-[var(--color-ink-light)]">
         对「{{ selectedStyle }}」的风格指令进行迭代优化：自动生成测试文本，与参考样本混合后图灵盲测（双次正反序），判别器无法识别仿写即为通过。
       </p>
-      <div class="flex items-center gap-3">
+      <div class="module-action-row">
         <label class="text-xs text-[var(--color-ink-light)] whitespace-nowrap">最大轮次</label>
         <input v-model.number="calibrateMaxIter" type="number" min="1" max="10"
           class="w-20 border border-[var(--color-parchment-darker)] rounded-md px-2 py-1 text-sm" />
@@ -420,12 +449,12 @@ onMounted(async () => {
     </div>
 
     <!-- 叙事DNA章节指令迭代校准 -->
-    <div v-if="selectedStyle" class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-5 space-y-4">
-      <h3 class="font-semibold text-[var(--color-leather)]">叙事DNA迭代校准（图灵盲测）</h3>
+    <div v-if="selectedStyle" class="module-panel p-5 space-y-4">
+      <h3 class="module-panel-title">叙事DNA迭代校准（图灵盲测）</h3>
       <p class="text-sm text-[var(--color-ink-light)]">
         对「{{ selectedStyle }}」的章节指令进行迭代优化：自动生成测试文本，与参考样本混合后图灵盲测叙事模式（推进节奏、场景结构、对话风格等），判别器无法识别仿写即为通过。
       </p>
-      <div class="flex items-center gap-3">
+      <div class="module-action-row">
         <label class="text-xs text-[var(--color-ink-light)] whitespace-nowrap">最大轮次</label>
         <input v-model.number="narrativeCalibrateMaxIter" type="number" min="1" max="10"
           class="w-20 border border-[var(--color-parchment-darker)] rounded-md px-2 py-1 text-sm" />
@@ -444,8 +473,9 @@ onMounted(async () => {
     </div>
 
     <!-- 分析新文风 -->
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-5 space-y-4">
-      <h3 class="font-semibold text-[var(--color-leather)]">分析新文风</h3>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div class="module-panel p-5 space-y-4">
+      <h3 class="module-panel-title">分析新文风</h3>
       <div>
         <label class="block text-xs text-[var(--color-ink-light)] mb-1">文风名称</label>
         <input v-model="newStyleName" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm max-w-xs" />
@@ -464,8 +494,8 @@ onMounted(async () => {
     </div>
 
     <!-- 叙事DNA -->
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-5 space-y-4">
-      <h3 class="font-semibold text-[var(--color-leather)]">叙事DNA分析</h3>
+    <div class="module-panel p-5 space-y-4">
+      <h3 class="module-panel-title">叙事DNA分析</h3>
       <p class="text-sm text-[var(--color-ink-light)]">为已有文风模板分析叙事DNA（架构/蓝图/章节分层指令）。</p>
       <div class="flex gap-3 flex-wrap">
         <div class="flex-1">
@@ -488,10 +518,11 @@ onMounted(async () => {
       </div>
       <StreamOutput v-bind="dnaState" placeholder="叙事DNA分析结果…" />
     </div>
+    </div>
 
     <!-- 融合文风 -->
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-5 space-y-4">
-      <h3 class="font-semibold text-[var(--color-leather)]">融合文风</h3>
+    <div class="module-panel p-5 space-y-4">
+      <h3 class="module-panel-title">融合文风</h3>
       <div>
         <label class="block text-xs text-[var(--color-ink-light)] mb-1">融合后名称</label>
         <input v-model="mergeName" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm max-w-xs" />

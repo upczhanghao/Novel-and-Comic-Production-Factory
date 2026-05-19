@@ -21,6 +21,7 @@ export function useWorkshopState() {
   const projectStore = useProjectStore()
   const configStore = useConfigStore()
   const generateStore = useGenerateStore()
+  const NO_STYLE = '不使用文风'
 
   const llmConfig = ref('')
   const embConfig = ref('')
@@ -39,11 +40,11 @@ export function useWorkshopState() {
 
   // ── 文风/DNA 列表 ─────────────────────────────────────────────────────────
   const styleList = ref<string[]>([])
-  const archStyle = ref('')
-  const bpStyle = ref('')
-  const chStyle = ref('')
-  const chNarrativeStyle = ref('')
-  const contStyle = ref('')
+  const archStyle = ref(NO_STYLE)
+  const bpStyle = ref(NO_STYLE)
+  const chStyle = ref(NO_STYLE)
+  const chNarrativeStyle = ref(NO_STYLE)
+  const contStyle = ref(NO_STYLE)
 
   // ── 步骤状态 ──────────────────────────────────────────────────────────────
   const arch = ref(mkState())
@@ -168,6 +169,39 @@ export function useWorkshopState() {
     } catch { /* 静默 */ }
   }
 
+  function ensureSelectedConfig(
+    current: { value: string },
+    choices: string[],
+    preferred?: string,
+  ) {
+    if (!choices.length) {
+      current.value = ''
+      return
+    }
+    if (preferred && choices.includes(preferred)) {
+      current.value = preferred
+      return
+    }
+    if (!current.value || !choices.includes(current.value)) {
+      current.value = choices[0]
+    }
+  }
+
+  function normalizeStyle(name?: string) {
+    const value = (name || '').trim()
+    if (!value || !styleList.value.includes(value)) return NO_STYLE
+    return value
+  }
+
+  function ensureStyleSelections() {
+    if (!styleList.value.length) return
+    archStyle.value = normalizeStyle(archStyle.value)
+    bpStyle.value = normalizeStyle(bpStyle.value)
+    chStyle.value = normalizeStyle(chStyle.value)
+    chNarrativeStyle.value = normalizeStyle(chNarrativeStyle.value)
+    contStyle.value = normalizeStyle(contStyle.value)
+  }
+
   async function profileConfirmAppend() {
     if (!profileExtracted.value) return
     try {
@@ -258,16 +292,9 @@ export function useWorkshopState() {
       styleList.value = ['不使用文风', ...res.data.styles]
     } catch { /* ignore */ }
     const p = projectStore.activeProjectData
-    if (p?.llm_config_name && configStore.llmChoices.includes(p.llm_config_name)) {
-      llmConfig.value = p.llm_config_name
-    } else if (configStore.llmChoices.length) {
-      llmConfig.value = configStore.llmChoices[0]
-    }
-    if (p?.emb_config_name && configStore.embeddingChoices.includes(p.emb_config_name)) {
-      embConfig.value = p.emb_config_name
-    } else if (configStore.embeddingChoices.length) {
-      embConfig.value = configStore.embeddingChoices[0]
-    }
+    ensureSelectedConfig(llmConfig, configStore.llmChoices, p?.llm_config_name)
+    ensureSelectedConfig(embConfig, configStore.embeddingChoices, p?.emb_config_name)
+    ensureStyleSelections()
   })
 
   // ── 加载/重载项目内容 ─────────────────────────────────────────────────────
@@ -284,17 +311,13 @@ export function useWorkshopState() {
         userGuidance.value = p.user_guidance ?? ''
         xpType.value = p.xp_type ?? ''
         xpSelectedPresets.value = p.xp_selected_presets ?? []
-        if (p.llm_config_name && configStore.llmChoices.includes(p.llm_config_name)) {
-          llmConfig.value = p.llm_config_name
-        }
-        if (p.emb_config_name && configStore.embeddingChoices.includes(p.emb_config_name)) {
-          embConfig.value = p.emb_config_name
-        }
-        archStyle.value = p.arch_style || ''
-        bpStyle.value = p.bp_style || ''
-        chStyle.value = p.ch_style || ''
-        chNarrativeStyle.value = p.ch_narrative_style || ''
-        contStyle.value = p.cont_style || ''
+        ensureSelectedConfig(llmConfig, configStore.llmChoices, p.llm_config_name)
+        ensureSelectedConfig(embConfig, configStore.embeddingChoices, p.emb_config_name)
+        archStyle.value = p.arch_style || NO_STYLE
+        bpStyle.value = p.bp_style || NO_STYLE
+        chStyle.value = p.ch_style || NO_STYLE
+        chNarrativeStyle.value = p.ch_narrative_style || NO_STYLE
+        contStyle.value = p.cont_style || NO_STYLE
         contXpType.value = p.cont_xp_type || ''
         seedText.value = p.step_seed_text || ''
         charText.value = p.step_char_text || ''
@@ -319,6 +342,7 @@ export function useWorkshopState() {
       if (generateStore.worldBuildingContent) worldText.value = generateStore.worldBuildingContent
       if (generateStore.plotArchitectureContent) plotText.value = generateStore.plotArchitectureContent
       if (generateStore.characterStateContent) charStateText.value = generateStore.characterStateContent
+      ensureStyleSelections()
     } finally {
       reloading.value = false
     }
@@ -329,6 +353,18 @@ export function useWorkshopState() {
     if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null }
     if (!name) return
     reloadProjectContent()
+  })
+
+  watch(() => configStore.llmChoices.slice(), (choices) => {
+    ensureSelectedConfig(llmConfig, choices)
+  })
+
+  watch(() => configStore.embeddingChoices.slice(), (choices) => {
+    ensureSelectedConfig(embConfig, choices)
+  })
+
+  watch(() => styleList.value.slice(), () => {
+    ensureStyleSelections()
   })
 
   // ── 基础参数自动保存 ──────────────────────────────────────────────────────

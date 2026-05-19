@@ -16,16 +16,19 @@ const state = useWorkshopState()
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto px-4 py-6 space-y-4">
-    <div class="flex items-center justify-between">
-      <h2 class="text-2xl font-bold" style="color: var(--color-ink)">✍️ 创作工坊</h2>
-      <div class="flex items-center gap-2">
+  <div class="module-page space-y-4">
+    <div class="module-toolbar">
+      <div>
+        <div class="module-kicker">Writing Workshop</div>
+        <div class="module-subtitle">从架构、蓝图到正文与后处理的一体化工作台。</div>
+      </div>
+      <div class="module-action-row">
         <button @click="state.reloadProjectContent()" :disabled="state.reloading.value" class="btn-primary" type="button"
           title="重新加载当前项目的架构、蓝图等内容">
-          {{ state.reloading.value ? '加载中…' : '🔄 重载项目' }}
+          {{ state.reloading.value ? '加载中…' : '重载项目' }}
         </button>
         <button @click="state.doExportNovel()" :disabled="state.exporting.value" class="btn-primary" type="button">
-          {{ state.exporting.value ? '导出中…' : '📥 合并导出小说' }}
+          {{ state.exporting.value ? '导出中…' : '合并导出小说' }}
         </button>
       </div>
     </div>

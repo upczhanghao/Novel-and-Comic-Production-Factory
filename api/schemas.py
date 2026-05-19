@@ -338,6 +338,10 @@ class PromptUpdate(BaseModel):
     content: str
 
 
+class InstructionTemplateUpdate(BaseModel):
+    content: str
+
+
 # ── 一致性检查 ────────────────────────────────────────────────────────────────
 
 class ConsistencyCheckRequest(BaseModel):
@@ -506,6 +510,14 @@ class ManjuImagePromptImportRequest(BaseModel):
     filepath: str = "./output"
     kind: str = "all"
     replace: bool = False
+
+
+class ManjuPromptEnhanceRequest(BaseModel):
+    filepath: str = "./output"
+    kind: str = "all"  # characters / storyboards / all
+    llm_config_name: str = ""
+    use_llm: bool = False
+    overwrite_locked: bool = False
 
 
 class ManjuStyleTemplateRequest(BaseModel):

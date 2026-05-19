@@ -1613,6 +1613,78 @@ detailed_outline_prompt = _active_prompts["detailed_outline_prompt"]
 # ============================================================
 PRESETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 
+_PRESET_DIRECTIVE_KEYS = [
+    "core_seed_prompt",
+    "character_dynamics_prompt",
+    "world_building_prompt",
+    "plot_architecture_prompt",
+    "create_character_state_prompt",
+    "chapter_blueprint_prompt",
+    "chunked_chapter_blueprint_prompt",
+    "first_chapter_draft_prompt",
+    "next_chapter_draft_prompt",
+    "summary_prompt",
+    "update_character_state_prompt",
+    "Character_Import_Prompt",
+    "continuation_architecture_prompt",
+    "continuation_characters_prompt",
+    "continuation_arcs_prompt",
+    "continuation_char_state_prompt",
+    "continuation_seed_prompt",
+    "continuation_world_prompt",
+    "scene_expansion_prompt",
+    "detailed_outline_prompt",
+    "detailed_outline_prompt_detailed",
+]
+
+
+def _prompts_with_directive(directive: str) -> dict:
+    prompts = dict(_DEFAULT_PROMPTS)
+    prefix = f"【方案倾向】\n{directive.strip()}\n\n"
+    for key in _PRESET_DIRECTIVE_KEYS:
+        if key in prompts:
+            prompts[key] = prefix + prompts[key]
+    return prompts
+
+
+_DEFAULT_PRESET_SPECS = [
+    {
+        "name": "网络小说",
+        "description": "适用于起点、番茄等网络连载小说的默认提示词方案",
+        "prompts": dict(_DEFAULT_PROMPTS),
+    },
+    {
+        "name": "玄幻升级流",
+        "description": "强调境界体系、资源争夺、宗门/家族压迫与阶段性突破的长线爽文方案",
+        "directive": "以玄幻升级流为核心：建立清晰境界、功法、资源、势力与天赋差异；每个阶段都要有压迫、试炼、反杀、突破和新地图牵引。爽点来自规则内的越级胜利，而不是无条件开挂。",
+    },
+    {
+        "name": "都市逆袭爽文",
+        "description": "适合都市、职场、商战、神豪、赘婿、重生逆袭等高反馈题材",
+        "directive": "以都市逆袭爽文为核心：围绕身份落差、现实羞辱、资源翻盘、商业/职场/家族矛盾设计剧情。冲突要贴近日常利益，打脸要有铺垫和公开反馈，主角成长要兼顾能力、财富、人脉与情感关系。",
+    },
+    {
+        "name": "悬疑推理",
+        "description": "强调线索公平、误导、调查节奏、嫌疑人关系网与阶段性反转",
+        "directive": "以悬疑推理为核心：每章必须推进谜团、线索、嫌疑人关系或调查阻力；线索要可回收，误导要合理，反转要由已出现信息支撑。减少无关升级爽点，强化证据链、动机链和读者可推理性。",
+    },
+    {
+        "name": "科幻群像",
+        "description": "适合硬科幻、近未来、星际、赛博和多角色视角的结构化创作",
+        "directive": "以科幻群像为核心：先确立技术假设、社会后果、组织结构和伦理代价，再让多角色从不同位置承受系统压力。剧情要让科技设定改变人物选择，而不是只做背景装饰。",
+    },
+    {
+        "name": "古言权谋",
+        "description": "适合宫廷、宅斗、朝堂、女强、复仇与情感克制型古风故事",
+        "directive": "以古言权谋为核心：围绕礼法、身份、家族、宫廷、朝堂和情感克制设计冲突。人物说话要有分寸与潜台词，行动要考虑名分、证据、盟友和后果；爽点来自谋局、借势和反制。",
+    },
+    {
+        "name": "轻小说恋爱",
+        "description": "适合校园、日常、奇幻恋爱、角色互动驱动和轻喜剧题材",
+        "directive": "以轻小说恋爱为核心：把角色魅力、关系推进、误会解除、日常事件和轻喜剧节奏放在前面。章节要有明确互动主题，台词要自然有梗，情感推进要靠选择、陪伴和细节回响。",
+    },
+]
+
 
 def _sync_module_vars():
     """将 _active_prompts 同步到模块级变量，使 prompt_definitions.X 访问到最新值"""
@@ -1623,12 +1695,15 @@ def _sync_module_vars():
 
 
 def ensure_default_preset():
-    """确保默认预设文件存在，首次运行时自动创建"""
+    """确保内置预设文件存在，首次运行时自动创建；已有文件不覆盖。"""
     os.makedirs(PRESETS_DIR, exist_ok=True)
-    default_file = os.path.join(PRESETS_DIR, "网络小说.json")
-    if not os.path.exists(default_file):
-        save_preset("网络小说", "适用于起点、番茄等网络连载小说的默认提示词方案", dict(_DEFAULT_PROMPTS))
-        logging.info("Default preset '网络小说.json' created.")
+    for spec in _DEFAULT_PRESET_SPECS:
+        preset_file = os.path.join(PRESETS_DIR, f"{spec['name']}.json")
+        if os.path.exists(preset_file):
+            continue
+        prompts = spec.get("prompts") or _prompts_with_directive(spec.get("directive", ""))
+        save_preset(spec["name"], spec["description"], prompts)
+        logging.info(f"Default preset '{spec['name']}.json' created.")
 
 
 def list_presets():

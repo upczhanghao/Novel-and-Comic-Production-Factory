@@ -18,6 +18,7 @@ from llm_adapters import create_llm_adapter
 from embedding_adapters import create_embedding_adapter
 from utils import atomic_write_json
 from embedding_adapters import clear_embedding_cache
+from default_style_templates import default_style_templates
 from novel_generator.architecture import (
     Novel_architecture_generate, continue_novel_architecture,
     generate_core_seed, generate_character_dynamics,
@@ -160,6 +161,7 @@ class NovelGeneratorWeb:
         self.projects_data = self._load_projects()
         # 初始化提示词预设系统
         prompt_definitions.ensure_default_preset()
+        self.ensure_default_styles()
         active_preset = self.config.get("prompt_preset", {}).get("active_preset", "网络小说")
         if active_preset in prompt_definitions.list_presets():
             prompt_definitions.load_preset(active_preset)
@@ -2489,6 +2491,22 @@ class NovelGeneratorWeb:
         styles_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "styles")
         os.makedirs(styles_dir, exist_ok=True)
         return styles_dir
+
+    def ensure_default_styles(self):
+        """补齐内置文风与叙事DNA模板；已有同名文件不覆盖。"""
+        styles_dir = self.get_styles_dir()
+        created = 0
+        for style in default_style_templates():
+            name = str(style.get("style_name", "")).strip()
+            if not name:
+                continue
+            style_file = os.path.join(styles_dir, f"{name}.json")
+            if os.path.exists(style_file):
+                continue
+            atomic_write_json(style, style_file, indent=2)
+            created += 1
+        if created:
+            logging.info(f"Created {created} built-in style templates.")
 
     def list_styles(self):
         """列出所有已保存的文风名称"""

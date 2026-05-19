@@ -303,7 +303,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+  <div class="module-page compact space-y-5">
     <h2 class="text-2xl font-bold" style="color: var(--color-ink)">⚙️ 模型配置</h2>
 
     <Transition name="fade">
@@ -313,13 +313,23 @@ onMounted(() => {
       </div>
     </Transition>
 
+    <div class="module-toolbar">
+      <div>
+        <div class="module-kicker">Model Hub</div>
+        <div class="module-subtitle">管理文本模型、向量模型、图片模型与网络代理。</div>
+      </div>
+    </div>
+
     <!-- LLM 配置 -->
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden">
-      <div class="px-5 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)]">
-        <h3 class="font-semibold text-[var(--color-leather)]">LLM 配置</h3>
+    <div class="module-panel overflow-hidden">
+      <div class="module-panel-header">
+        <div>
+          <h3 class="module-panel-title">LLM 配置</h3>
+          <p class="module-panel-caption">用于创作、分析、改写、提示词生成等文本任务。</p>
+        </div>
       </div>
       <div class="p-5 space-y-4">
-        <div class="flex gap-2 flex-wrap">
+        <div class="module-action-row">
           <select
             v-model="selectedLLM"
             @change="loadLLMConfig(selectedLLM)"
@@ -395,7 +405,7 @@ onMounted(() => {
             <input v-model.number="llmForm.thinking_budget" type="number" min="0" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
           </div>
         </div>
-        <div class="flex justify-end gap-2">
+        <div class="module-action-row justify-end">
           <button @click="testLLM" :disabled="llmTestRunning || !llmForm.model_name"
             class="px-4 py-2 rounded-md text-sm font-semibold border border-[var(--color-leather)] text-[var(--color-leather)] hover:bg-[var(--color-parchment)] disabled:opacity-40 transition-colors" type="button">
             {{ llmTestRunning ? '测试中...' : '测试连接' }}
@@ -412,12 +422,15 @@ onMounted(() => {
     </div>
 
     <!-- Embedding 配置 -->
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden">
-      <div class="px-5 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)]">
-        <h3 class="font-semibold text-[var(--color-leather)]">Embedding 配置</h3>
+    <div class="module-panel overflow-hidden">
+      <div class="module-panel-header">
+        <div>
+          <h3 class="module-panel-title">Embedding 配置</h3>
+          <p class="module-panel-caption">用于知识库、作者参考库和上下文检索。</p>
+        </div>
       </div>
       <div class="p-5 space-y-4">
-        <div class="flex gap-2 flex-wrap">
+        <div class="module-action-row">
           <select
             v-model="selectedEmb"
             @change="loadEmbConfig(selectedEmb)"
@@ -464,7 +477,7 @@ onMounted(() => {
             <input v-model.number="embForm.retrieval_k" type="number" min="1" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
           </div>
         </div>
-        <div class="flex justify-end gap-2">
+        <div class="module-action-row justify-end">
           <button @click="testEmb" :disabled="embTestRunning || !embForm.model_name"
             class="px-4 py-2 rounded-md text-sm font-semibold border border-[var(--color-leather)] text-[var(--color-leather)] hover:bg-[var(--color-parchment)] disabled:opacity-40 transition-colors" type="button">
             {{ embTestRunning ? '测试中...' : '测试连接' }}
@@ -481,12 +494,15 @@ onMounted(() => {
     </div>
 
     <!-- 图片生成配置 -->
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden">
-      <div class="px-5 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)]">
-        <h3 class="font-semibold text-[var(--color-leather)]">图片生成配置</h3>
+    <div class="module-panel overflow-hidden">
+      <div class="module-panel-header">
+        <div>
+          <h3 class="module-panel-title">图片生成配置</h3>
+          <p class="module-panel-caption">用于图片生成模块和漫剧分镜单图生成。</p>
+        </div>
       </div>
       <div class="p-5 space-y-4">
-        <div class="flex gap-2 flex-wrap">
+        <div class="module-action-row">
           <select
             v-model="selectedImage"
             @change="loadImageConfig(selectedImage)"
@@ -559,17 +575,19 @@ onMounted(() => {
     </div>
 
     <!-- ── 代理设置 ── -->
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden">
-      <div class="px-4 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)] flex items-center justify-between">
-        <h3 class="text-lg font-semibold" style="color: var(--color-leather)">🌐 网络代理</h3>
+    <div class="module-panel overflow-hidden">
+      <div class="module-panel-header">
+        <div>
+          <h3 class="module-panel-title">网络代理</h3>
+          <p class="module-panel-caption">为 LLM 和 Embedding 请求配置 HTTP 代理。</p>
+        </div>
         <label class="inline-flex items-center gap-2 cursor-pointer shrink-0">
           <input type="checkbox" v-model="proxyEnabled" class="rounded border-[var(--color-parchment-darker)]" />
           <span class="text-sm" :class="proxyEnabled ? 'text-green-700 font-medium' : 'text-[var(--color-ink-light)]'">{{ proxyEnabled ? '已启用' : '已禁用' }}</span>
         </label>
       </div>
       <div class="p-4 space-y-3">
-        <p class="text-xs text-[var(--color-ink-light)]">为 LLM 和 Embedding 请求配置 HTTP 代理。适用于需要翻墙或走内网代理的网络环境。</p>
-        <div class="flex gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-[1fr_9rem] gap-3">
           <div class="flex-1">
             <label class="block text-xs text-[var(--color-ink-light)] mb-1">代理地址</label>
             <input v-model="proxyUrl" placeholder="例如：127.0.0.1 或 http://proxy.example.com" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />

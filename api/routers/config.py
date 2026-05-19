@@ -5,6 +5,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from api.schemas import (
+    InstructionTemplateUpdate,
     LLMConfigCreate,
     EmbeddingConfigCreate,
     ImageConfigCreate,
@@ -12,6 +13,11 @@ from api.schemas import (
     TestEmbeddingConfigRequest,
 )
 from api.app_state import get_web_app
+from api.manju_instruction_templates import (
+    list_manju_instruction_templates,
+    reset_manju_instruction_template,
+    save_manju_instruction_template,
+)
 from api.sse_utils import run_with_sse
 from api.image_service import normalize_image_config, safe_image_config
 from api.security import redact_secrets
@@ -20,13 +26,21 @@ from llm_adapters import create_llm_adapter
 
 router = APIRouter(tags=["config"])
 
+def _named_configs(configs: dict) -> dict:
+    """Drop blank/whitespace config names so frontend choices stay valid."""
+    return {
+        (name or "").strip(): conf
+        for name, conf in configs.items()
+        if isinstance(name, str) and name.strip()
+    }
+
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
 
 @router.get("/config/llm")
 def list_llm_configs():
     app = get_web_app()
-    configs = app.config.get("llm_configs", {})
+    configs = _named_configs(app.config.get("llm_configs", {}))
     return {
         "configs": redact_secrets(configs),
         "choices": list(configs.keys()),
@@ -63,7 +77,7 @@ def delete_llm_config(name: str):
 @router.get("/config/embedding")
 def list_embedding_configs():
     app = get_web_app()
-    configs = app.config.get("embedding_configs", {})
+    configs = _named_configs(app.config.get("embedding_configs", {}))
     return {
         "configs": redact_secrets(configs),
         "choices": list(configs.keys())
@@ -98,7 +112,7 @@ def delete_embedding_config(name: str):
 @router.get("/config/image")
 def list_image_configs():
     app = get_web_app()
-    configs = app.config.get("image_configs", {})
+    configs = _named_configs(app.config.get("image_configs", {}))
     safe_configs = {name: safe_image_config(conf) for name, conf in configs.items()}
     return {
         "configs": safe_configs,
@@ -130,6 +144,42 @@ def delete_image_config(name: str):
     from config_manager import save_config
     save_config(app.config, app.config_file)
     return {"message": "✅ 图片生成配置已删除"}
+
+
+# ── 指令模板 ─────────────────────────────────────────────────────────────────
+
+@router.get("/config/instructions/manju")
+def list_manju_instructions():
+    app = get_web_app()
+    return {"templates": list_manju_instruction_templates(app.config)}
+
+
+@router.put("/config/instructions/manju/{key}")
+def update_manju_instruction(key: str, body: InstructionTemplateUpdate):
+    app = get_web_app()
+    try:
+        save_manju_instruction_template(app.config, key, body.content)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"未知的漫剧指令模板：{key}")
+    from config_manager import save_config
+    save_config(app.config, app.config_file)
+    return {"message": "✅ 指令模板已保存", "templates": list_manju_instruction_templates(app.config)}
+
+
+@router.post("/config/instructions/manju/{key}/reset")
+def reset_manju_instruction(key: str):
+    app = get_web_app()
+    try:
+        content = reset_manju_instruction_template(app.config, key)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"未知的漫剧指令模板：{key}")
+    from config_manager import save_config
+    save_config(app.config, app.config_file)
+    return {
+        "message": "✅ 已恢复默认指令模板",
+        "content": content,
+        "templates": list_manju_instruction_templates(app.config),
+    }
 
 
 # ── 连通性测试 ────────────────────────────────────────────────────────────────

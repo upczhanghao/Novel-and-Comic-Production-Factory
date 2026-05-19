@@ -31,13 +31,20 @@ onMounted(() => loadProfile())
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+  <div class="module-page compact space-y-5">
     <h2 class="text-2xl font-bold" style="color: var(--color-ink)">👤 用户画像</h2>
 
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden">
-      <div class="px-4 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)] flex items-center justify-between">
+    <div class="module-toolbar">
+      <div>
+        <div class="module-kicker">User Profile</div>
+        <div class="module-subtitle">维护创作偏好，供生成流程自动参考。</div>
+      </div>
+    </div>
+
+    <div class="module-panel overflow-hidden">
+      <div class="module-panel-header">
         <div>
-          <h3 class="text-base font-semibold" style="color: var(--color-leather)">内容偏好</h3>
+          <h3 class="module-panel-title">内容偏好</h3>
           <p class="text-xs text-[var(--color-ink-light)] mt-1">记录你的内容偏好（角色类型、XP倾向、关系模式等）。生成架构/角色/剧情/蓝图/细纲时自动参考。全局生效，所有项目共用。</p>
         </div>
         <label class="inline-flex items-center gap-2 cursor-pointer shrink-0 ml-4">
@@ -71,10 +78,12 @@ onMounted(() => loadProfile())
       </div>
     </div>
 
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden">
-      <div class="px-4 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)]">
-        <h3 class="text-base font-semibold" style="color: var(--color-leather)">自动采集</h3>
+    <div class="module-panel overflow-hidden">
+      <div class="module-panel-header">
+        <div>
+        <h3 class="module-panel-title">自动采集</h3>
         <p class="text-xs text-[var(--color-ink-light)] mt-1">在创意讨论、修订建议、润色建议中表达偏好时，系统会自动检测并提示你是否加入画像。</p>
+        </div>
       </div>
       <div class="p-4">
         <div class="text-sm text-[var(--color-ink-light)] space-y-2">

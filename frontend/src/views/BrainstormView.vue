@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, computed } from 'vue'
+import { ref, nextTick, onMounted, computed, watch } from 'vue'
 import { postSSE } from '@/api/client'
 import { brainstormApi } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
@@ -121,15 +121,25 @@ onMounted(async () => {
   await Promise.all([configStore.loadAll(), projectStore.loadActive()])
   if (configStore.llmChoices.length) llmConfig.value = configStore.llmChoices[0]
 })
+
+watch(() => configStore.llmChoices.slice(), (choices) => {
+  if (!choices.length) {
+    llmConfig.value = ''
+    return
+  }
+  if (!llmConfig.value || !choices.includes(llmConfig.value)) {
+    llmConfig.value = choices[0]
+  }
+})
 </script>
 
 <template>
-  <div class="flex flex-col h-[calc(100vh-120px)] max-w-4xl mx-auto px-4 py-4">
+  <div class="module-page compact flex flex-col h-[calc(100vh-120px)]">
     <!-- Header -->
-    <div class="flex items-center justify-between mb-3">
+    <div class="module-toolbar mb-3">
       <div class="flex items-center gap-3">
         <h2 class="text-2xl font-bold" style="color: var(--color-ink)">💡 创意讨论</h2>
-        <div class="flex gap-1">
+        <div class="studio-segment">
           <button
             v-for="m in modeOptions" :key="m.value"
             @click="discussionMode = m.value"
@@ -142,7 +152,7 @@ onMounted(async () => {
           >{{ m.label }}</button>
         </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="module-action-row">
         <button
           @click="showSettings = !showSettings"
           class="px-3 py-1.5 rounded-md text-sm border border-[var(--color-parchment-darker)] hover:bg-[var(--color-parchment-darker)] transition-colors"
@@ -165,7 +175,7 @@ onMounted(async () => {
     <Transition name="slide">
       <div
         v-if="showSettings"
-        class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 mb-3 space-y-3"
+        class="module-panel p-4 mb-3 space-y-3"
       >
         <div class="flex gap-4 flex-wrap">
           <div class="flex-1 min-w-[200px]">
@@ -233,7 +243,7 @@ onMounted(async () => {
     <!-- Chat Messages -->
     <div
       ref="chatContainerRef"
-      class="flex-1 overflow-y-auto rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4"
+      class="module-panel flex-1 overflow-y-auto p-4 space-y-4"
     >
       <!-- Empty state -->
       <div
@@ -253,11 +263,11 @@ onMounted(async () => {
         :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
       >
         <div
-          class="max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap"
+          class="max-w-[80%] chat-bubble px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap"
           :class="
             msg.role === 'user'
-              ? 'bg-[var(--color-leather)] text-[var(--color-parchment)]'
-              : 'bg-[var(--color-parchment-dark)] text-[var(--color-ink)]'
+              ? 'user'
+              : 'assistant'
           "
         >{{ msg.content }}</div>
       </div>
@@ -265,7 +275,7 @@ onMounted(async () => {
       <!-- Streaming message -->
       <div v-if="streaming && streamContent" class="flex justify-start">
         <div
-          class="max-w-[80%] rounded-xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-[var(--color-parchment-dark)] text-[var(--color-ink)]"
+          class="max-w-[80%] chat-bubble assistant px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap"
         >
           {{ streamContent }}
           <span class="inline-block w-2 h-4 ml-0.5 bg-[var(--color-ink)] animate-pulse" />
@@ -274,7 +284,7 @@ onMounted(async () => {
 
       <!-- Loading indicator -->
       <div v-if="streaming && !streamContent" class="flex justify-start">
-        <div class="rounded-xl px-4 py-3 bg-[var(--color-parchment-dark)] text-[var(--color-ink-light)] text-sm italic">
+        <div class="chat-bubble assistant px-4 py-3 text-[var(--color-ink-light)] text-sm italic">
           思考中...
           <span class="inline-block w-2 h-4 ml-0.5 bg-[var(--color-ink-light)] animate-pulse" />
         </div>

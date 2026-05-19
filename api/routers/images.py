@@ -9,9 +9,13 @@ from fastapi.responses import FileResponse
 
 from api.app_state import get_web_app
 from api.image_service import (
+    add_image_record,
     add_image_prompt_items,
+    delete_image_prompt_item,
+    delete_image_record,
     image_response_payload,
     images_dir,
+    list_image_records,
     list_image_prompt_queue,
     save_generated_image,
     safe_served_image_path,
@@ -38,24 +42,58 @@ def generate_image(body: ImageGenerateRequest):
         raise HTTPException(status_code=400, detail="提示词不能为空")
     config = _get_image_config(body.config_name)
     out_path = save_generated_image(config, prompt, body.filepath, body.source_type, body.source_id)
-    return {"message": "✅ 图片已生成", **image_response_payload(out_path, prompt, body.config_name)}
+    payload = {
+        **image_response_payload(out_path, prompt, body.config_name),
+        "id": os.path.splitext(os.path.basename(out_path))[0],
+        "source_type": body.source_type,
+        "source_id": body.source_id,
+    }
+    add_image_record(body.filepath, payload)
+    return {"message": "✅ 图片已生成", **payload}
 
 
 @router.get("/images/list")
 def list_images(filepath: str = "./output"):
     filepath = normalize_project_path(filepath, allow_blank=False)
     root = images_dir(filepath)
-    rows = []
+    rows_by_path: dict[str, dict] = {}
+
+    for record in list_image_records(filepath):
+        path = str(record.get("path") or "")
+        if not path or not os.path.exists(path):
+            continue
+        stat = os.stat(path)
+        payload = image_response_payload(path, str(record.get("prompt") or ""), str(record.get("config_name") or ""))
+        payload.update(record)
+        payload.update({
+            "id": str(record.get("id") or os.path.splitext(os.path.basename(path))[0]),
+            "filename": os.path.basename(path),
+            "url": image_response_payload(path, "", "").get("url"),
+            "download_url": image_response_payload(path, "", "").get("download_url"),
+            "size": stat.st_size,
+            "mtime": stat.st_mtime,
+        })
+        rows_by_path[os.path.abspath(path)] = payload
+
     for filename in sorted(os.listdir(root), reverse=True):
         path = os.path.join(root, filename)
         if not os.path.isfile(path) or os.path.splitext(filename)[1].lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
             continue
+        abs_path = os.path.abspath(path)
+        if abs_path in rows_by_path:
+            continue
         stat = os.stat(path)
-        rows.append({
+        rows_by_path[abs_path] = {
             **image_response_payload(path, "", ""),
+            "id": os.path.splitext(filename)[0],
+            "created_at": "",
             "size": stat.st_size,
             "mtime": stat.st_mtime,
-        })
+        }
+
+    rows = sorted(rows_by_path.values(), key=lambda item: float(item.get("mtime") or 0), reverse=True)
+    for row in rows:
+        add_image_record(filepath, row)
     return {"images": rows, "save_dir": root}
 
 
@@ -74,6 +112,20 @@ def import_image_prompts(body: ImagePromptImportRequest):
         "count": len(rows),
         "save_dir": images_dir(body.filepath),
     }
+
+
+@router.delete("/images/prompts/{item_id}")
+def delete_image_prompt(item_id: str, filepath: str = "./output"):
+    filepath = normalize_project_path(filepath, allow_blank=False)
+    rows = delete_image_prompt_item(filepath, item_id)
+    return {"message": "✅ 已删除待生成提示词", "items": rows, "count": len(rows), "save_dir": images_dir(filepath)}
+
+
+@router.delete("/images/records/{record_id}")
+def delete_generated_image_record(record_id: str, filepath: str = "./output", delete_file: bool = True):
+    filepath = normalize_project_path(filepath, allow_blank=False)
+    rows = delete_image_record(filepath, record_id=record_id, delete_file=delete_file)
+    return {"message": "✅ 已删除生成记录", "items": rows, "count": len(rows), "save_dir": images_dir(filepath)}
 
 
 @router.get("/images/file")

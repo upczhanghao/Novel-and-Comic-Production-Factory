@@ -66,9 +66,13 @@ watch(() => projectStore.filepath, loadFiles)
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto px-4 py-6 space-y-4">
-    <div class="flex items-center justify-between flex-wrap gap-2">
+  <div class="module-page space-y-4">
+    <div class="module-toolbar">
       <h2 class="text-2xl font-bold" style="color: var(--color-ink)">📁 文件管理</h2>
+      <div>
+        <div class="module-kicker">Project Files</div>
+        <div class="module-subtitle">浏览当前项目生成的文稿、配置和结构化数据。</div>
+      </div>
       <button @click="loadFiles" class="border border-[var(--color-parchment-darker)] rounded-md px-3 py-1.5 text-sm hover:bg-[var(--color-parchment)] transition-colors" type="button">
         🔄 刷新
       </button>
@@ -76,11 +80,11 @@ watch(() => projectStore.filepath, loadFiles)
 
     <p class="text-sm text-[var(--color-ink-light)]">路径：<code class="font-mono bg-[var(--color-parchment-dark)] px-1 rounded">{{ projectStore.filepath }}</code></p>
 
-    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    <div class="module-grid">
       <!-- 文件树 -->
-      <div class="lg:col-span-2 rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden">
-        <div class="px-4 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)]">
-          <span class="font-medium text-sm text-[var(--color-leather)]">文件列表</span>
+      <div class="module-panel overflow-hidden module-aside-sticky">
+        <div class="module-panel-header">
+          <span class="module-panel-title">文件列表</span>
         </div>
         <div class="overflow-y-auto" style="max-height: 600px">
           <div v-if="loading" class="p-4 text-sm text-[var(--color-ink-light)] italic">加载中…</div>
@@ -107,15 +111,15 @@ watch(() => projectStore.filepath, loadFiles)
       </div>
 
       <!-- 文件内容 -->
-      <div class="lg:col-span-3 rounded-xl border border-[var(--color-parchment-darker)] bg-white overflow-hidden">
-        <div class="px-4 py-3 bg-[var(--color-parchment)] border-b border-[var(--color-parchment-darker)]">
-          <span class="font-medium text-sm text-[var(--color-leather)]">
+      <div class="module-panel overflow-hidden">
+        <div class="module-panel-header">
+          <span class="module-panel-title">
             {{ selectedFile ? selectedFile.path : '请选择文件' }}
           </span>
         </div>
         <div class="p-4 overflow-y-auto" style="max-height: 600px">
           <div v-if="loadingContent" class="text-sm text-[var(--color-ink-light)] italic">加载中…</div>
-          <pre v-else-if="fileContent" class="text-sm font-mono whitespace-pre-wrap leading-relaxed text-[var(--color-ink)]">{{ fileContent }}</pre>
+          <pre v-else-if="fileContent" class="code-console text-sm font-mono whitespace-pre-wrap leading-relaxed rounded-md p-4">{{ fileContent }}</pre>
           <p v-else class="text-sm text-[var(--color-ink-light)] italic">点击左侧文件查看内容</p>
         </div>
       </div>

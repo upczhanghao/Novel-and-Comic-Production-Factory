@@ -5,11 +5,16 @@ import { useConfigStore } from '@/stores/config'
 import { useProjectStore } from '@/stores/project'
 
 type ImageRow = {
+  id: string
   path: string
   filename: string
   url: string
   download_url: string
   prompt?: string
+  config_name?: string
+  created_at?: string
+  source_type?: string
+  source_id?: string
 }
 
 type PromptItem = {
@@ -69,11 +74,15 @@ async function generateImage() {
       source_id: selectedPrompt.value?.source_id ?? selectedPrompt.value?.id ?? '',
     })
     currentImage.value = {
+      id: res.data.id,
       path: res.data.path,
       filename: res.data.filename,
       url: res.data.url,
       download_url: res.data.download_url,
       prompt: res.data.prompt,
+      config_name: res.data.config_name,
+      source_type: res.data.source_type,
+      source_id: res.data.source_id,
     }
     message.value = res.data.message
     await loadGallery()
@@ -81,6 +90,32 @@ async function generateImage() {
     message.value = `❌ ${(e as Error).message}`
   } finally {
     generating.value = false
+  }
+}
+
+async function deletePromptItem(item: PromptItem) {
+  try {
+    const res = await imagesApi.deletePrompt(item.id, filepath.value)
+    promptQueue.value = res.data.items ?? []
+    saveDir.value = res.data.save_dir ?? saveDir.value
+    if (selectedPrompt.value?.id === item.id) {
+      selectedPrompt.value = null
+      prompt.value = ''
+    }
+    message.value = res.data.message
+  } catch (e: unknown) {
+    message.value = `❌ ${(e as Error).message}`
+  }
+}
+
+async function deleteImageRecord(img: ImageRow) {
+  try {
+    const res = await imagesApi.deleteRecord(img.id, filepath.value, true)
+    message.value = res.data.message
+    if (currentImage.value?.id === img.id || currentImage.value?.path === img.path) currentImage.value = null
+    await loadGallery()
+  } catch (e: unknown) {
+    message.value = `❌ ${(e as Error).message}`
   }
 }
 
@@ -92,104 +127,133 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <div class="flex items-center justify-between gap-3 flex-wrap">
+  <div class="module-page space-y-4">
+    <div class="module-toolbar">
       <h2 class="text-2xl font-bold" style="color: var(--color-ink)">图片生成</h2>
-      <router-link to="/config" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm hover:bg-white transition-colors">
-        管理图片配置
-      </router-link>
+      <div>
+        <div class="module-kicker">Image Lab</div>
+        <div class="module-subtitle">集中处理待生成提示词、参数编辑、图片预览与生成记录。</div>
+      </div>
+      <div class="module-action-row">
+        <button @click="loadPrompts" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm bg-white" type="button">刷新提示词</button>
+        <button @click="loadGallery" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm bg-white" type="button">刷新记录</button>
+        <router-link to="/config" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm bg-white hover:bg-[var(--color-surface-muted)] transition-colors">
+          管理图片配置
+        </router-link>
+      </div>
     </div>
 
-    <section class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 space-y-4">
-      <div class="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-3">
-        <div>
-          <label class="block text-xs text-[var(--color-ink-light)] mb-1">图片生成配置</label>
-          <select v-model="selectedConfig" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
-            <option value="">请选择配置</option>
-            <option v-for="c in configStore.imageChoices" :key="c" :value="c">{{ c }}</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-xs text-[var(--color-ink-light)] mb-1">图片保存目录</label>
-          <div class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm text-[var(--color-ink-light)]">
-            {{ saveDir || `${filepath}/images` }}
+    <section class="module-grid three">
+      <aside class="module-panel p-4 space-y-3 module-aside-sticky">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-semibold text-[var(--color-ink)]">待生成提示词</h3>
+            <p class="text-xs text-[var(--color-ink-light)] mt-1">{{ promptQueue.length }} 个任务</p>
           </div>
         </div>
-      </div>
-
-      <div>
-        <label class="block text-xs text-[var(--color-ink-light)] mb-1">图片提示词</label>
-        <textarea v-model="prompt" rows="7" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" />
-      </div>
-
-      <div class="flex items-center justify-between gap-3 flex-wrap">
-        <div v-if="message" class="text-sm" :class="message.startsWith('✅') ? 'text-green-700' : message.startsWith('❌') ? 'text-red-600' : 'text-[var(--color-ink-light)]'">
-          {{ message }}
+        <div class="space-y-2 max-h-[calc(100vh-220px)] overflow-auto pr-1">
+          <div
+            v-for="item in promptQueue"
+            :key="item.id"
+            @click="usePrompt(item)"
+            class="w-full module-list-item px-3 py-2.5 cursor-pointer"
+            :class="selectedPrompt?.id === item.id ? 'active' : ''"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 text-left">
+                <div class="text-sm font-semibold text-[var(--color-ink)] truncate">{{ item.title }}</div>
+                <div class="text-xs text-[var(--color-ink-light)] line-clamp-2 mt-1">{{ item.prompt }}</div>
+              </div>
+              <button
+                @click.stop="deletePromptItem(item)"
+                class="shrink-0 px-2 py-1 rounded border border-red-200 text-[10px] text-red-600 hover:bg-red-50"
+                type="button"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+          <div v-if="!promptQueue.length" class="text-sm text-[var(--color-ink-light)] rounded-md border border-dashed border-[var(--color-parchment-darker)] p-4 text-center">暂无导入提示词。</div>
         </div>
-        <div v-else class="text-sm text-[var(--color-ink-light)]">生成后的图片会保存在项目文件夹内的 images/项目名称 目录。</div>
-        <button
-          @click="generateImage"
-          :disabled="!canGenerate"
-          class="px-5 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
-          style="background-color: var(--color-leather); color: var(--color-parchment)"
-          type="button"
-        >
-          {{ generating ? '生成中...' : '生成图片' }}
-        </button>
-      </div>
-    </section>
+      </aside>
 
-    <section class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-5">
-      <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4 min-h-[420px]">
+      <main class="module-panel p-4 min-h-[620px] flex flex-col">
         <div v-if="currentImage" class="space-y-3">
-          <img :src="currentImage.url" :alt="currentImage.filename" class="max-h-[720px] w-full object-contain rounded-md border border-[var(--color-parchment-darker)] bg-[var(--color-parchment)]" />
+          <img :src="currentImage.url" :alt="currentImage.filename" class="max-h-[760px] w-full object-contain rounded-md border border-[var(--color-parchment-darker)] bg-[var(--color-surface-muted)]" />
           <div class="flex items-center justify-between gap-3 flex-wrap">
             <div class="text-sm text-[var(--color-ink-light)] break-all">{{ currentImage.filename }}</div>
-            <a :href="currentImage.download_url" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" target="_blank">下载图片</a>
+            <a :href="currentImage.download_url" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm bg-white" target="_blank">下载图片</a>
           </div>
         </div>
-        <div v-else class="h-full min-h-[360px] flex items-center justify-center text-sm text-[var(--color-ink-light)]">
-          暂无预览
+        <div v-else class="flex-1 min-h-[520px] grid place-items-center text-center text-sm text-[var(--color-ink-light)] rounded-md border border-dashed border-[var(--color-parchment-darker)] bg-[var(--color-surface-muted)]">
+          <div>
+            <div class="text-4xl mb-3">✦</div>
+            <div class="font-semibold text-[var(--color-ink)]">选择提示词并生成图片</div>
+            <div class="mt-1">生成结果会在这里预览。</div>
+          </div>
         </div>
-      </div>
+      </main>
 
-      <aside class="space-y-4">
-        <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-[var(--color-leather)]">待生成提示词</h3>
-            <button @click="loadPrompts" class="px-2 py-1 rounded border border-[var(--color-parchment-darker)] text-xs" type="button">刷新</button>
+      <aside class="space-y-4 module-aside-sticky">
+        <div class="module-panel p-4 space-y-4">
+          <div>
+            <h3 class="font-semibold text-[var(--color-ink)]">生成参数</h3>
+            <p class="text-xs text-[var(--color-ink-light)] mt-1">编辑提示词并提交到图片模型。</p>
           </div>
-          <div class="space-y-2 max-h-72 overflow-auto">
-            <button
-              v-for="item in promptQueue"
-              :key="item.id"
-              @click="usePrompt(item)"
-              class="w-full text-left rounded-md border border-[var(--color-parchment-darker)] px-2 py-2 hover:border-[var(--color-leather)] transition-colors"
-              type="button"
-            >
-              <div class="text-xs font-semibold text-[var(--color-ink)] truncate">{{ item.title }}</div>
-              <div class="text-[10px] text-[var(--color-ink-light)] truncate">{{ item.prompt }}</div>
-            </button>
-            <div v-if="!promptQueue.length" class="text-sm text-[var(--color-ink-light)]">暂无导入提示词。</div>
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">图片生成配置</label>
+            <select v-model="selectedConfig" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
+              <option value="">请选择配置</option>
+              <option v-for="c in configStore.imageChoices" :key="c" :value="c">{{ c }}</option>
+            </select>
           </div>
+          <div>
+            <label class="block text-xs text-[var(--color-ink-light)] mb-1">图片提示词</label>
+            <textarea v-model="prompt" rows="9" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" />
+          </div>
+          <div class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-xs text-[var(--color-ink-light)] break-all bg-[var(--color-surface-muted)]">
+            {{ saveDir || `${filepath}/images` }}
+          </div>
+          <div v-if="message" class="text-sm" :class="message.startsWith('✅') ? 'text-green-700' : message.startsWith('❌') ? 'text-red-600' : 'text-[var(--color-ink-light)]'">
+            {{ message }}
+          </div>
+          <button
+            @click="generateImage"
+            :disabled="!canGenerate"
+            class="w-full px-5 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
+            style="background-color: var(--color-leather); color: var(--color-parchment)"
+            type="button"
+          >
+            {{ generating ? '生成中...' : '生成图片' }}
+          </button>
         </div>
 
-        <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-4">
+        <div class="module-panel p-4">
           <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-[var(--color-leather)]">生成记录</h3>
-            <button @click="loadGallery" class="px-2 py-1 rounded border border-[var(--color-parchment-darker)] text-xs" type="button">刷新</button>
+            <div>
+              <h3 class="font-semibold text-[var(--color-ink)]">生成记录</h3>
+              <p class="text-xs text-[var(--color-ink-light)] mt-1">{{ gallery.length }} 张图片</p>
+            </div>
           </div>
-          <div class="grid grid-cols-2 gap-2 max-h-[420px] overflow-auto">
-            <button
+          <div class="grid grid-cols-2 gap-2 max-h-[440px] overflow-auto">
+            <div
               v-for="img in gallery"
-              :key="img.path"
+              :key="img.id || img.path"
               @click="currentImage = img"
-              class="text-left border border-[var(--color-parchment-darker)] rounded-md overflow-hidden hover:border-[var(--color-leather)] transition-colors"
-              type="button"
+              class="text-left module-list-item overflow-hidden cursor-pointer"
             >
               <img :src="img.url" :alt="img.filename" class="w-full aspect-[2/3] object-cover bg-[var(--color-parchment)]" />
-              <div class="p-1 text-[10px] text-[var(--color-ink-light)] truncate">{{ img.filename }}</div>
-            </button>
+              <div class="p-1.5 space-y-1">
+                <div class="text-[10px] text-[var(--color-ink-light)] truncate">{{ img.filename }}</div>
+                <button
+                  @click.stop="deleteImageRecord(img)"
+                  class="w-full px-2 py-1 rounded border border-red-200 text-[10px] text-red-600 hover:bg-red-50"
+                  type="button"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
             <div v-if="!gallery.length" class="col-span-2 text-sm text-[var(--color-ink-light)]">暂无图片</div>
           </div>
         </div>

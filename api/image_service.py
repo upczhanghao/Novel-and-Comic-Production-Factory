@@ -74,6 +74,10 @@ def image_prompt_queue_path(filepath: str) -> str:
     return os.path.join(images_dir(filepath), "prompt_queue.json")
 
 
+def image_records_path(filepath: str) -> str:
+    return os.path.join(images_dir(filepath), "generated_records.json")
+
+
 def image_prompt_queue_legacy_path(filepath: str) -> str:
     filepath = normalize_project_path(filepath or "./output", allow_blank=False)
     return safe_join(filepath, "images", "prompt_queue.json")
@@ -137,6 +141,56 @@ def add_image_prompt_items(filepath: str, items: list[dict[str, Any]], replace: 
     rows = list(by_id.values())
     _write_json(image_prompt_queue_path(filepath), rows)
     return rows
+
+
+def delete_image_prompt_item(filepath: str, item_id: str) -> list[dict[str, Any]]:
+    rows = list_image_prompt_queue(filepath)
+    next_rows = [item for item in rows if str(item.get("id")) != item_id]
+    if len(next_rows) == len(rows):
+        raise HTTPException(status_code=404, detail="未找到待生成提示词")
+    _write_json(image_prompt_queue_path(filepath), next_rows)
+    return next_rows
+
+
+def list_image_records(filepath: str) -> list[dict[str, Any]]:
+    rows = _read_json(image_records_path(filepath), [])
+    return rows if isinstance(rows, list) else []
+
+
+def add_image_record(filepath: str, item: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = list_image_records(filepath)
+    record = dict(item)
+    record["id"] = record.get("id") or os.path.splitext(os.path.basename(str(record.get("path") or "")))[0]
+    record["created_at"] = record.get("created_at") or datetime.now().isoformat(timespec="seconds")
+    by_id = {str(row.get("id")): row for row in rows if row.get("id")}
+    by_id[str(record["id"])] = record
+    next_rows = sorted(by_id.values(), key=lambda row: str(row.get("created_at", "")), reverse=True)
+    _write_json(image_records_path(filepath), next_rows)
+    return next_rows
+
+
+def delete_image_record(filepath: str, record_id: str = "", path: str = "", delete_file: bool = True) -> list[dict[str, Any]]:
+    rows = list_image_records(filepath)
+    root = os.path.abspath(images_dir(filepath))
+    target_path = os.path.abspath(path) if path else ""
+    if record_id and not target_path:
+        for row in rows:
+            if str(row.get("id")) == record_id:
+                target_path = os.path.abspath(str(row.get("path") or ""))
+                break
+    next_rows = [
+        row for row in rows
+        if str(row.get("id")) != record_id and (not target_path or os.path.abspath(str(row.get("path") or "")) != target_path)
+    ]
+    if len(next_rows) == len(rows) and not target_path:
+        raise HTTPException(status_code=404, detail="未找到生成记录")
+    if delete_file and target_path:
+        if os.path.commonpath([root, target_path]) != root:
+            raise HTTPException(status_code=403, detail="不允许删除项目图片目录外的文件")
+        if os.path.exists(target_path):
+            os.remove(target_path)
+    _write_json(image_records_path(filepath), next_rows)
+    return next_rows
 
 
 def image_file_url(path: str, download: bool = False) -> str:
