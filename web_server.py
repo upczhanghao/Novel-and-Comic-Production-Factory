@@ -3561,12 +3561,19 @@ class NovelGeneratorWeb:
             p.get("filepath", "") for p in self.projects_data.get("projects", {}).values()
         }
 
+        skip_dirs = {"trash", "images", "__pycache__"}
         for entry in os.listdir(output_dir):
+            if entry.startswith(".") or entry in skip_dirs:
+                continue
             sub_path = os.path.join(output_dir, entry)
             if not os.path.isdir(sub_path):
                 continue
-            arch_file = os.path.join(sub_path, "Novel_architecture.txt")
-            if not os.path.exists(arch_file):
+            # 任一存在即视为有效项目：小说/漫剧/独立图片项目
+            has_arch = os.path.exists(os.path.join(sub_path, "Novel_architecture.txt"))
+            has_manju = os.path.isdir(os.path.join(sub_path, "manju"))
+            has_images = os.path.isdir(os.path.join(sub_path, "images"))
+            has_config = os.path.exists(os.path.join(sub_path, "project_config.json"))
+            if not (has_arch or has_manju or has_images or has_config):
                 continue
             # 跳过已注册的（按名称或路径）
             if entry in existing_names:
@@ -3592,7 +3599,12 @@ class NovelGeneratorWeb:
         if discovered:
             self._save_projects()
 
-        return discovered, f"发现并注册了 {len(discovered)} 个新项目" if discovered else ([], "未发现新项目")
+        msg = (
+            f"发现并注册了 {len(discovered)} 个新项目"
+            if discovered
+            else "未发现新项目"
+        )
+        return discovered, msg
 
     def delete_project(self, project_name):
         """从注册表移除项目，并将本地文件移到 trash 目录"""
