@@ -3,6 +3,42 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.1.1] - 2026-05-21
+
+### Fixed — P0 审计修复 (22 项关键工作流/数据丢失问题)
+
+**Workshop (S1–S6)**
+- S1: 批量生成完成后不再自动导出，改为用户勾选 opt-in
+- S2: SSE 取消时正确重置 `running` 状态，防止 UI 卡死
+- S3: 保存章节时锁定目标章号，避免生成中途切换导致覆盖错误章节
+- S4: 新增「加载章节」按钮，可回看已生成章节内容
+- S5: Ctrl+S 快捷键适配当前步骤（章节/蓝图/架构组件），不再调用已废弃的 `saveArchitecture`
+- S6: 续写面板添加 `id="continue-anchor"`，`goto()` 导航可正确定位并展开 `<details>`
+
+**Manju/Image (S7–S13)**
+- S7: 漫剧生图结果持久化到 `image_records`，刷新后不丢失
+- S8: 分镜表内联预览/重新生成组件 `ShotImageInline`
+- S9: 批量生图支持 `shot_ids` 过滤，可只重新生成选中分镜
+- S10: 分镜图片点击可在新窗口预览大图
+- S11: 导出区域添加 `id="manju-export"` 锚点
+- S12: `regenerateShot` 添加 try/catch + feedback.error 错误提示
+- S13: 图片配置选择器内联到分镜操作列
+
+**Config (S14–S17)**
+- S14: OpenAI 模板模型 ID 修正 `gpt-5.4-mini` → `gpt-4.1-mini`
+- S15: 应用模板时完整重置表单（`{ ...empty(), ...v }`），不再残留旧字段
+- S16: `extract_user_preferences` 失败时返回结构化错误而非 500
+- S17: `set_default_style` 使用 Pydantic schema 校验，拒绝非法字段
+
+**Shell (S18–S22)**
+- S18: `<component :key>` 绑定 `activeProject`，切换项目时清除 keep-alive 缓存
+- S19: 引导向导「前往配置」使用 `router.push` 替代失效的 `<a href>`
+- S20: 切换/删除项目时清空 generate store 缓存（懒导入避免循环依赖）
+- S21: 新增 `hasActiveProject` computed，供组件统一判断项目就绪
+- S22: LogsView prompt 接口从裸 `axios` 迁移到 `logsApi` 客户端封装
+
+---
+
 ## [2.1.0] - 2026-05-21
 
 ### Added — 项目浏览器
