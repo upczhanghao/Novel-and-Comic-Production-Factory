@@ -52,4 +52,4 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/api/health')" || exit 1
 
-CMD ["sh", "-c", "mkdir -p /app/data /app/output /app/styles /app/prompts /app/vectorstore && test -f \"$NOVELWRITER_PROJECTS_FILE\" || printf '{\"active_project\":\"\",\"projects\":{}}\\n' > \"$NOVELWRITER_PROJECTS_FILE\" && test -f \"$NOVELWRITER_XP_PRESETS_FILE\" || printf '[]\\n' > \"$NOVELWRITER_XP_PRESETS_FILE\" && uvicorn api_server:app --host \"$NOVELWRITER_HOST\" --port \"$NOVELWRITER_PORT\""]
+CMD ["sh", "-c", "mkdir -p /app/data /app/output /app/styles /app/prompts /app/vectorstore && { test -f \"$NOVELWRITER_PROJECTS_FILE\" || printf '{\"active_project\":\"\",\"projects\":{}}\\n' > \"$NOVELWRITER_PROJECTS_FILE\"; } && { test -f \"$NOVELWRITER_XP_PRESETS_FILE\" || printf '[]\\n' > \"$NOVELWRITER_XP_PRESETS_FILE\"; } && exec uvicorn api_server:app --host \"$NOVELWRITER_HOST\" --port \"$NOVELWRITER_PORT\""]

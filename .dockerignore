@@ -24,6 +24,7 @@ data
 config.json
 projects.json
 xp_presets.json
+server.log
 
 # Editor/temp files
 .idea
