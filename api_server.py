@@ -31,7 +31,7 @@ logging.basicConfig(
 app = FastAPI(
     title="NovelWriter API",
     description="AI 小说生成器 REST + SSE API",
-    version="2.0.0",
+    version="2.1.0",
 )
 
 
@@ -105,7 +105,7 @@ app.include_router(images.router, prefix="/api")
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "2.1.0"}
 
 
 # ── 生产模式：serve Vue 构建产物 ───────────────────────────────────────────────
