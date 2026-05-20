@@ -1,2 +1,37 @@
+# Secrets / local config
 config.json
 .env
+
+# Python runtime
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Logs / generated runtime artifacts
+app.log
+server.log
+prompt_history.jsonl
+.novelwriter.requirements.sha256
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# User data (mounted at runtime)
+output/
+trash/
+vectorstore/
+data/
+projects.json
+xp_presets.json
+
+# OS / editor
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+*.tmp

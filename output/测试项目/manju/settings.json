@@ -1,8 +1,0 @@
-{
-  "llm_config_name": "openai",
-  "start_chapter": 1,
-  "end_chapter": 2,
-  "shots_per_chapter": 12,
-  "visual_style": "国漫竖屏短剧，电影级构图，高细节角色，明快色彩，适合移动端观看",
-  "extra_guidance": "强调情绪特写、服装连续、镜头节奏清晰"
-}
