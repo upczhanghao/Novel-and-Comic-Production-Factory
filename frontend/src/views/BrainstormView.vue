@@ -111,6 +111,7 @@ function clearChat() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (e.isComposing) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     sendMessage()

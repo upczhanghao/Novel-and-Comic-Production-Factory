@@ -10,11 +10,13 @@ import CommandPalette from '@/components/CommandPalette.vue'
 import { useUIStore } from '@/stores/ui'
 import { useFeedbackStore } from '@/stores/feedback'
 import { useTasksStore } from '@/stores/tasks'
+import { useProjectStore } from '@/stores/project'
 
 const route = useRoute()
 const ui = useUIStore()
 const feedback = useFeedbackStore()
 const tasks = useTasksStore()
+const projectStore = useProjectStore()
 const mobileMenuOpen = ref(false)
 const showOnboarding = ref(false)
 const collapsedGroups = ref<Record<string, boolean>>({})
@@ -171,7 +173,7 @@ function openSearch() {
       <main class="studio-content">
         <router-view v-slot="{ Component }">
           <keep-alive>
-            <component :is="Component" />
+            <component :is="Component" :key="route.path + '@' + projectStore.activeProject" />
           </keep-alive>
         </router-view>
       </main>

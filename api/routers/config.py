@@ -14,6 +14,7 @@ from api.schemas import (
     TestImageConfigRequest,
     SetLLMDefaultRequest,
     SetDefaultRequest,
+    SetDefaultStyleRequest,
 )
 from api.app_state import get_web_app
 from api.manju_instruction_templates import (
@@ -243,12 +244,13 @@ def get_default_style():
 
 
 @router.put("/config/default-style")
-def set_default_style(body: dict):
+def set_default_style(body: SetDefaultStyleRequest):
     app = get_web_app()
     ds = app.config.setdefault("default_style", {})
+    payload = body.model_dump(exclude_none=True)
     for k in ("arch_style", "bp_style", "ch_style", "ch_narrative_style"):
-        if k in body:
-            ds[k] = body[k]
+        if k in payload:
+            ds[k] = payload[k]
     from config_manager import save_config
     save_config(app.config, app.config_file)
     return {"message": "✅ 已设为全局默认文风", **ds}
@@ -408,15 +410,22 @@ def get_user_profile():
 
 @router.post("/config/user_profile/extract")
 def extract_user_preferences(body: dict):
-    """从用户文本中提取偏好信号，返回提取结果（不自动写入）"""
+    """从用户文本中提取偏好信号，返回提取结果（不自动写入）。
+
+    返回字段：
+    - preferences: 提取到的偏好（可能为空字符串）
+    - error: 出错或前置条件未满足时的提示文案（前端可据此显示反馈）
+    """
     text = body.get("text", "").strip()
     llm_config_name = body.get("llm_config_name", "")
-    if not text or not llm_config_name:
-        return {"preferences": ""}
+    if not text:
+        return {"preferences": "", "error": "请先输入待分析的文本"}
+    if not llm_config_name:
+        return {"preferences": "", "error": "尚未选择 LLM 配置"}
 
     app = get_web_app()
     if llm_config_name not in app.config.get("llm_configs", {}):
-        return {"preferences": ""}
+        return {"preferences": "", "error": f"未找到 LLM 配置「{llm_config_name}」"}
 
     llm_conf = app.config["llm_configs"][llm_config_name]
     existing_profile = _read_profile().get("profile", "")

@@ -99,6 +99,8 @@ export function useWorkshopState() {
   const injectWorldBuilding = ref(false)
   const sceneByScene = ref(false)  // 按场景分段生成
   const chapterNum = ref(1)
+  // 章节内容当前归属的章节号（在生成成功时锁定），用于避免「先生成第 5 章、再把 chapterNum 改成 6、然后点保存」把第 5 章内容写到第 6 章
+  const savedChapterNum = ref<number | null>(null)
   const charactersInvolved = ref('')
   const keyItems = ref('')
   const sceneLocation = ref('')
@@ -445,6 +447,7 @@ export function useWorkshopState() {
       state.sseHandle.abort()
       state.sseHandle = null
     }
+    state.running = false
   }
 
   function runStepSSE(state: StepState, textRef: { value: string }, url: string, body: Record<string, unknown>) {
@@ -509,9 +512,28 @@ export function useWorkshopState() {
 
   async function saveChapter() {
     if (!chapter.value.result) return
+    // 优先使用生成时锁定的章节号；用户改 chapterNum 后点保存不会写错文件
+    const num = savedChapterNum.value ?? chapterNum.value
     try {
-      await generateApi.saveChapter(chapterNum.value, chapter.value.result, filepath.value)
-      saveMsg.value = `✅ 第 ${chapterNum.value} 章已保存`
+      await generateApi.saveChapter(num, chapter.value.result, filepath.value)
+      saveMsg.value = `✅ 第 ${num} 章已保存`
+    } catch (e: unknown) { saveMsg.value = `❌ ${(e as Error).message}` }
+    setTimeout(() => { saveMsg.value = '' }, 3000)
+  }
+
+  async function loadChapter(num: number) {
+    if (!num || num < 1) return
+    try {
+      const res = await generateApi.getChapter(num, filepath.value)
+      const text = (res.data as { content?: string }).content || ''
+      if (!text) {
+        saveMsg.value = `第 ${num} 章尚无内容`
+      } else {
+        chapter.value.result = text
+        chapter.value.error = ''
+        savedChapterNum.value = num
+        saveMsg.value = `✅ 已加载第 ${num} 章`
+      }
     } catch (e: unknown) { saveMsg.value = `❌ ${(e as Error).message}` }
     setTimeout(() => { saveMsg.value = '' }, 3000)
   }
@@ -520,9 +542,29 @@ export function useWorkshopState() {
   function handleKeydown(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault()
-      if (chapter.value.result && !chapter.value.running) saveChapter()
-      else if (bp.value.result && !bp.value.running) saveBlueprint()
-      else if (arch.value.result && !arch.value.running) saveArchitecture()
+      // 优先保存当前焦点最有可能的工作产物。
+      // 架构现已拆分为 5 个独立组件 (core_seed / characters / char_state / world / plot)；
+      // saveArchitecture 已废弃，只会吐误导 toast，因此不在快捷键中触发。
+      if (chapter.value.result && !chapter.value.running) {
+        saveChapter()
+        return
+      }
+      if (bp.value.result && !bp.value.running) {
+        saveBlueprint()
+        return
+      }
+      // 架构 5 个子组件：保存所有有内容的（与各组件独立保存按钮一致）
+      const archParts: Array<[string, string]> = [
+        ['core_seed', seedText.value],
+        ['character_dynamics', charText.value],
+        ['character_state', charStateText.value],
+        ['world_building', worldText.value],
+        ['plot_architecture', plotText.value],
+      ]
+      const filled = archParts.filter(([, c]) => c)
+      if (filled.length) {
+        Promise.all(filled.map(([name, content]) => saveComponent(name, content)))
+      }
     }
   }
   onActivated(() => document.addEventListener('keydown', handleKeydown))
@@ -796,6 +838,8 @@ export function useWorkshopState() {
 
   // ── Step 3: 章节 ─────────────────────────────────────────────────────────
   function doGenerateChapter() {
+    // 锁定生成时的章节号，保证「生成 → 修改 chapterNum → 保存」不会写错文件
+    savedChapterNum.value = chapterNum.value
     runSSE(chapter.value, '/generate/chapter', {
       llm_config_name: llmConfig.value, emb_config_name: embConfig.value,
       filepath: filepath.value, chapter_num: chapterNum.value,
@@ -822,8 +866,10 @@ export function useWorkshopState() {
   }
 
   // ── 一键完成 ──────────────────────────────────────────────────────────────
+  // 完成后是否自动导出（用户显式勾选，避免取消时下载半成品）
+  const batchAutoExport = ref(false)
   watch(() => batch.value.running, (running, wasRunning) => {
-    if (wasRunning && !running && batch.value.result && !batch.value.error) {
+    if (wasRunning && !running && batch.value.result && !batch.value.error && batchAutoExport.value) {
       doExportNovel()
     }
   })
@@ -1139,9 +1185,10 @@ export function useWorkshopState() {
     injectCharToWorld,
     // chapter params
     injectWorldBuilding, sceneByScene,
-    chapterNum, charactersInvolved, keyItems, sceneLocation, timeConstraint, chGuidance,
+    chapterNum, savedChapterNum, charactersInvolved, keyItems, sceneLocation, timeConstraint, chGuidance,
+    loadChapter,
     // batch
-    batch,
+    batch, batchAutoExport,
     // continue
     continueArch, newChapters, continueGuidance, contXpType,
     // continue step-by-step

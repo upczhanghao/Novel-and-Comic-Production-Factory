@@ -60,7 +60,7 @@ watch([
 const stepRefs: Record<string, string> = {
   arch: 'arch-anchor', blueprint: 'bp-anchor', outline: 'outline-anchor',
   chapter: 'chapter-anchor', finalize: 'finalize-anchor', humanize: 'humanize-anchor',
-  continue: 'batch-anchor',
+  continue: 'continue-anchor',
 }
 
 function goto(idx: number) {
@@ -68,7 +68,11 @@ function goto(idx: number) {
   const key = keys[idx]
   const id = stepRefs[key]
   if (id) {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const el = document.getElementById(id)
+    if (el) {
+      if (el.tagName === 'DETAILS') (el as HTMLDetailsElement).open = true
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
   }
 }
 
@@ -96,7 +100,8 @@ const preflightStep = computed(() => {
           title="重新加载当前项目的架构、蓝图等内容">
           {{ state.reloading.value ? '加载中…' : '重载项目' }}
         </button>
-        <button @click="state.doExportNovel()" :disabled="state.exporting.value" class="btn-primary" type="button">
+        <button @click="state.doExportNovel()" :disabled="state.exporting.value || state.numChapters.value < 1" class="btn-primary" type="button"
+          :title="state.numChapters.value < 1 ? '尚无章节可导出' : ''">
           {{ state.exporting.value ? '导出中…' : '合并导出小说' }}
         </button>
       </div>

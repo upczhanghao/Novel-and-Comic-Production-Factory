@@ -416,12 +416,15 @@ async function loadStats() {
   dataMsg.value = '✅ 角色统计已刷新'
 }
 
+function openImagePreview(url: string) {
+  if (url) window.open(url, '_blank')
+}
+
 async function generateShotImage(shot: StoryboardShot) {
   if (!selectedImageConfig.value) {
     dataMsg.value = '❌ 请先选择图片生成配置'
     return
-  }
-  const next = new Set(generatingImageIds.value)
+  }  const next = new Set(generatingImageIds.value)
   next.add(shot.id)
   generatingImageIds.value = next
   dataMsg.value = `正在生成图片：第${shot.chapter_num}章 镜${shot.shot_no}`
@@ -449,17 +452,22 @@ async function generateShotImage(shot: StoryboardShot) {
 async function regenerateShot(shot: StoryboardShot) {
   if (shot.locked) return
   dataMsg.value = `正在重写分镜：第${shot.chapter_num}章 镜${shot.shot_no}`
-  const res = await manjuApi.regenerateShot({
-    filepath: filepath.value,
-    llm_config_name: llmConfig.value,
-    shot_id: shot.id,
-    visual_style: visualStyle.value,
-    extra_guidance: extraGuidance.value,
-  })
-  const updated = res.data.shot as StoryboardShot
-  const idx = storyboardShots.value.findIndex((item) => item.id === updated.id)
-  if (idx >= 0) storyboardShots.value[idx] = updated
-  dataMsg.value = res.data.message
+  try {
+    const res = await manjuApi.regenerateShot({
+      filepath: filepath.value,
+      llm_config_name: llmConfig.value,
+      shot_id: shot.id,
+      visual_style: visualStyle.value,
+      extra_guidance: extraGuidance.value,
+    })
+    const updated = res.data.shot as StoryboardShot
+    const idx = storyboardShots.value.findIndex((item) => item.id === updated.id)
+    if (idx >= 0) storyboardShots.value[idx] = updated
+    dataMsg.value = res.data.message
+  } catch (e) {
+    dataMsg.value = ''
+    feedback.error('重写分镜失败', (e as Error).message)
+  }
 }
 
 async function createQueue() {
@@ -1067,7 +1075,7 @@ watch(() => characters.value.running, (running, prev) => {
             {{ dataMsg }}
           </div>
 
-          <div class="px-4 module-action-row">
+          <div id="manju-export" class="px-4 module-action-row">
             <button @click="exportAssets('characters', 'json')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">角色 JSON</button>
             <button @click="exportAssets('storyboards', 'csv')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">分镜 CSV</button>
             <button @click="exportAssets('storyboards', 'xlsx')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">分镜 Excel</button>
@@ -1180,12 +1188,15 @@ watch(() => characters.value.running, (running, prev) => {
                     <td class="p-2">
                       <div class="flex flex-col gap-1">
                         <button @click="regenerateShot(shot)" :disabled="shot.locked || !llmConfig" class="px-2 py-1 rounded border border-[var(--color-parchment-darker)] disabled:opacity-50" type="button">重写</button>
-                        <button @click="generateShotImage(shot)" :disabled="generatingImageIds.has(shot.id)" class="px-2 py-1 rounded border border-[var(--color-parchment-darker)] disabled:opacity-50" type="button">
-                          {{ generatingImageIds.has(shot.id) ? '生图中' : '生图' }}
-                        </button>
-                        <a v-if="shot.image_url" :href="shot.image_url" target="_blank" class="text-[10px] text-green-700 underline">预览</a>
-                        <a v-if="shot.image_download_url" :href="shot.image_download_url" target="_blank" class="text-[10px] text-[var(--color-leather)] underline">下载</a>
-                        <span v-else-if="shot.image_path" class="text-[10px] text-green-700 break-all">已生成</span>
+                        <ShotImageInline
+                          :shot="shot"
+                          :image-configs="configStore.imageChoices"
+                          :image-config="selectedImageConfig"
+                          :generating="generatingImageIds.has(shot.id)"
+                          @update:image-config="selectedImageConfig = $event"
+                          @generate="generateShotImage($event as StoryboardShot)"
+                          @preview="openImagePreview"
+                        />
                       </div>
                     </td>
                   </tr>

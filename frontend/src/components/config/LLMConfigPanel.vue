@@ -64,7 +64,8 @@ function loadConfig(name: string) {
 watch(() => props.pendingPreset, (v) => {
   if (!v) return
   selected.value = ''
-  form.value = { ...empty(), ...form.value, ...v }
+  // 仅以模板默认值 + 模板覆盖为新表单内容；不再合并旧表单，避免上一个模板的 API Key / base_url 渗透到新模板。
+  form.value = { ...empty(), ...v }
   emit('consumed')
 })
 

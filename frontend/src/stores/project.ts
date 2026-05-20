@@ -47,6 +47,7 @@ export const useProjectStore = defineStore('project', () => {
   const loading = ref(false)
 
   const filepath = computed(() => activeProjectData.value?.filepath ?? './output')
+  const hasActiveProject = computed(() => Boolean(activeProject.value && activeProjectData.value))
 
   async function loadProjects() {
     const res = await projectsApi.list()
@@ -66,7 +67,15 @@ export const useProjectStore = defineStore('project', () => {
     await activateProject(name)
   }
 
+  function _clearGenerateCache() {
+    // 懒导入，避免与 generate store 之间的循环依赖
+    import('./generate').then(({ useGenerateStore }) => {
+      useGenerateStore().$reset()
+    })
+  }
+
   async function activateProject(name: string) {
+    _clearGenerateCache()
     const res = await projectsApi.activate(name)
     activeProject.value = name
     activeProjectData.value = res.data.project ?? null
@@ -91,6 +100,7 @@ export const useProjectStore = defineStore('project', () => {
     if (wasActive) {
       activeProject.value = ''
       activeProjectData.value = null
+      _clearGenerateCache()
     }
     await loadProjects()
   }
@@ -101,6 +111,7 @@ export const useProjectStore = defineStore('project', () => {
     activeProjectData,
     loading,
     filepath,
+    hasActiveProject,
     loadProjects,
     loadActive,
     createProject,

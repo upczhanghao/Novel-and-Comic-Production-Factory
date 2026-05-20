@@ -20,6 +20,7 @@ import requests
 from api.app_state import get_web_app
 from api.image_service import (
     add_image_prompt_items,
+    add_image_record,
     image_response_payload,
     normalize_image_config,
     save_generated_image,
@@ -1217,7 +1218,7 @@ def _collect_markdown_prompt_items(markdown: str, source_type: str, source_label
     return items
 
 
-def _manju_prompt_items(filepath: str, kind: str) -> list[dict[str, Any]]:
+def _manju_prompt_items(filepath: str, kind: str, shot_ids: list[str] | None = None) -> list[dict[str, Any]]:
     if kind == "characters":
         items = []
         for idx, card in enumerate(_load_characters_structured(filepath), 1):
@@ -1240,8 +1241,12 @@ def _manju_prompt_items(filepath: str, kind: str) -> list[dict[str, Any]]:
     if kind == "storyboards":
         rows = _load_storyboard_rows(filepath)
         if rows:
+            id_filter = {str(sid) for sid in (shot_ids or []) if sid}
             items = []
             for idx, row in enumerate(rows, 1):
+                row_id = str(row.get("id") or f"shot_{idx}")
+                if id_filter and row_id not in id_filter:
+                    continue
                 prompt, negative = _build_storyboard_image_prompt(filepath, row)
                 if not prompt:
                     continue
@@ -1260,14 +1265,14 @@ def _manju_prompt_items(filepath: str, kind: str) -> list[dict[str, Any]]:
     if kind == "all":
         items: list[dict[str, Any]] = []
         for item_kind in ("characters", "scenes", "storyboards"):
-            items.extend(_manju_prompt_items(filepath, item_kind))
+            items.extend(_manju_prompt_items(filepath, item_kind, shot_ids if item_kind == "storyboards" else None))
         return items
     raise HTTPException(status_code=400, detail="kind 只能是 characters/scenes/storyboards/all")
 
 
 @router.post("/manju/image-prompts/import")
 def import_manju_prompts_to_images(body: ManjuImagePromptImportRequest):
-    items = _manju_prompt_items(body.filepath, body.kind)
+    items = _manju_prompt_items(body.filepath, body.kind, body.shot_ids)
     if not items:
         raise HTTPException(status_code=404, detail="暂无可导入的图片提示词，请先生成对应内容")
     rows = add_image_prompt_items(body.filepath, items, body.replace)
@@ -1535,6 +1540,13 @@ def generate_manju_image(body: ManjuImageGenerateRequest):
                 card["image_download_url"] = image_response_payload(out_path, prompt, body.image_config_name).get("download_url")
         _save_characters_structured(body.filepath, cards)
     payload = image_response_payload(out_path, prompt, body.image_config_name)
+    # 注册到统一图片记录，使 ImageView 的「生成记录」可见
+    add_image_record(body.filepath, {
+        **payload,
+        "id": os.path.splitext(os.path.basename(out_path))[0],
+        "source_type": body.source_type,
+        "source_id": body.source_id,
+    })
     return {"message": "✅ 图片已生成", **payload, "relative_path": rel_path}
 
 

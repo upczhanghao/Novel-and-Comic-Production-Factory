@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
 import { useConfigStore } from '@/stores/config'
 import { useUIStore } from '@/stores/ui'
@@ -13,6 +14,7 @@ const projectStore = useProjectStore()
 const configStore = useConfigStore()
 const uiStore = useUIStore()
 const feedback = useFeedbackStore()
+const router = useRouter()
 
 const step = ref(1)
 const presets = ref<string[]>([])
@@ -79,8 +81,7 @@ function skip() {
 function goConfig() {
   emit('close')
   uiStore.completeOnboarding()
-  window.location.hash = '#/config'
-  setTimeout(() => { window.location.pathname = '/config' }, 0)
+  router.push('/config')
 }
 </script>
 

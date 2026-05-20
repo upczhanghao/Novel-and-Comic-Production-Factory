@@ -2,7 +2,6 @@
 import { ref, onMounted, computed } from 'vue'
 import { logsApi } from '@/api/client'
 import { useFeedbackStore } from '@/stores/feedback'
-import axios from 'axios'
 
 const feedback = useFeedbackStore()
 
@@ -217,9 +216,7 @@ const expandedResponse = ref<Set<number>>(new Set())
 async function loadPrompts() {
   promptLoading.value = true
   try {
-    const res = await axios.get('/api/logs/prompts', {
-      params: { tail: promptTail.value, search: promptSearch.value },
-    })
+    const res = await logsApi.getPrompts(promptTail.value, promptSearch.value)
     promptRecords.value = res.data.records
     promptTotal.value = res.data.total
     expandedIndex.value = new Set()
@@ -235,10 +232,12 @@ async function loadPrompts() {
 async function clearPrompts() {
   if (!confirm('确认清空所有 Prompt 历史？')) return
   try {
-    await axios.delete('/api/logs/prompts')
+    await logsApi.clearPrompts()
     promptRecords.value = []
     promptTotal.value = 0
-  } catch { /* ignore */ }
+  } catch (e) {
+    feedback.error('清空 Prompt 历史失败', (e as Error).message)
+  }
 }
 
 const filteredPrompts = computed(() => {

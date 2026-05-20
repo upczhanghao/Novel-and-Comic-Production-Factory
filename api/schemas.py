@@ -91,6 +91,13 @@ class SetDefaultRequest(BaseModel):
     config_name: str
 
 
+class SetDefaultStyleRequest(BaseModel):
+    arch_style: str | None = None
+    bp_style: str | None = None
+    ch_style: str | None = None
+    ch_narrative_style: str | None = None
+
+
 # ── 项目 ──────────────────────────────────────────────────────────────────────
 
 class ProjectCreate(BaseModel):
@@ -529,6 +536,7 @@ class ManjuImagePromptImportRequest(BaseModel):
     filepath: str = "./output"
     kind: str = "all"
     replace: bool = False
+    shot_ids: list[str] | None = None  # 仅对 kind=storyboards 生效；为 None 或空列表时导入全部
 
 
 class ManjuPromptEnhanceRequest(BaseModel):

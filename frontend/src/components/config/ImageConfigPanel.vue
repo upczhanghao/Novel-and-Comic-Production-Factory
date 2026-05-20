@@ -54,7 +54,7 @@ function loadConfig(name: string) {
 watch(() => props.pendingPreset, (v) => {
   if (!v) return
   selected.value = ''
-  form.value = { ...empty(), ...form.value, ...v }
+  form.value = { ...empty(), ...v }
   emit('consumed')
 })
 

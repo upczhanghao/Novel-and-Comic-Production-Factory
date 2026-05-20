@@ -10,12 +10,16 @@ defineProps<{ state: ReturnType<typeof useWorkshopState> }>()
     <div class="flex items-center justify-between">
       <div>
         <h3 class="font-semibold text-[var(--color-leather)]">一键完成小说</h3>
-        <p class="text-xs text-[var(--color-ink-light)]">自动逐章生成草稿并定稿，完成后自动合并导出。支持断点续传（已有章节自动跳过）。使用步骤3中所选的文风与叙事DNA。</p>
+        <p class="text-xs text-[var(--color-ink-light)]">自动逐章生成草稿并定稿。支持断点续传（已有章节自动跳过）。使用步骤3中所选的文风与叙事DNA。如需完成后自动合并导出，请勾选「完成后自动导出」。</p>
       </div>
       <div class="flex items-center gap-3">
         <div class="flex items-center gap-2">
           <input id="batch-inject-world" v-model="state.injectWorldBuilding.value" type="checkbox" class="rounded border-[var(--color-parchment-darker)]" />
           <label for="batch-inject-world" class="text-xs text-[var(--color-ink-light)] select-none whitespace-nowrap">注入世界观</label>
+        </div>
+        <div class="flex items-center gap-2">
+          <input id="batch-auto-export" v-model="state.batchAutoExport.value" type="checkbox" class="rounded border-[var(--color-parchment-darker)]" />
+          <label for="batch-auto-export" class="text-xs text-[var(--color-ink-light)] select-none whitespace-nowrap">完成后自动导出</label>
         </div>
         <button @click="state.doBatchGenerate()" :disabled="state.batch.value.running || !state.llmConfig.value || !state.embConfig.value" class="btn-primary" type="button">
           {{ state.batch.value.running ? '批量生成中…' : '▶ 一键完成小说' }}

@@ -12,7 +12,10 @@ defineProps<{ state: ReturnType<typeof useWorkshopState> }>()
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div>
           <label class="block text-xs text-[var(--color-ink-light)] mb-1">章节号</label>
-          <input v-model.number="state.chapterNum.value" type="number" min="1" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
+          <div class="flex gap-2">
+            <input v-model.number="state.chapterNum.value" type="number" min="1" class="flex-1 border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
+            <button @click="state.loadChapter(state.chapterNum.value)" class="px-3 py-2 text-xs border border-[var(--color-parchment-darker)] rounded-md hover:bg-[var(--color-surface-muted)]" type="button" title="加载已生成的章节内容">📂 加载</button>
+          </div>
         </div>
         <div>
           <label class="block text-xs text-[var(--color-ink-light)] mb-1">文风（文笔层）</label>
@@ -75,7 +78,9 @@ defineProps<{ state: ReturnType<typeof useWorkshopState> }>()
         @cancel="state.cancelSSE(state.chapter.value)"
       />
       <div v-if="state.chapter.value.result && !state.chapter.value.running" class="flex justify-end">
-        <button @click="state.saveChapter()" class="btn-primary" type="button">💾 保存章节</button>
+        <button @click="state.saveChapter()" class="btn-primary" type="button">
+          💾 保存到第 {{ state.savedChapterNum.value ?? state.chapterNum.value }} 章
+        </button>
       </div>
     </div>
   </StepCard>

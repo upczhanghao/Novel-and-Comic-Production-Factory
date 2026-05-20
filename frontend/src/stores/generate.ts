@@ -32,6 +32,19 @@ export const useGenerateStore = defineStore('generate', () => {
     characterStateContent.value = res.data.character_state_content ?? ''
   }
 
+  function $reset() {
+    architectureContent.value = ''
+    blueprintContent.value = ''
+    characterDynamicsContent.value = ''
+    architectureExists.value = false
+    blueprintExists.value = false
+    characterDynamicsExists.value = false
+    coreSeedContent.value = ''
+    worldBuildingContent.value = ''
+    plotArchitectureContent.value = ''
+    characterStateContent.value = ''
+  }
+
   return {
     architectureContent,
     blueprintContent,
@@ -44,5 +57,6 @@ export const useGenerateStore = defineStore('generate', () => {
     plotArchitectureContent,
     characterStateContent,
     loadStatus,
+    $reset,
   }
 })

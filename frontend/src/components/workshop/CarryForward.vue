@@ -58,7 +58,8 @@ function carryToChapter() {
 <template>
   <div class="cf-root">
     <button v-if="canForwardToBlueprint" class="cf-btn" @click="carryArchToBlueprint" type="button"
-      title="把架构主线注入到下一步的全局指导">
+      :disabled="Boolean(props.state.userGuidance.value)"
+      :title="props.state.userGuidance.value ? '全局指导已填写，无法覆盖' : '把架构主线注入到下一步的全局指导'">
       架构 → 目录指导
     </button>
     <button v-if="canForwardToOutline" class="cf-btn" @click="carryBlueprintToOutline" type="button"
@@ -75,5 +76,6 @@ function carryToChapter() {
 <style scoped>
 .cf-root { display: flex; flex-wrap: wrap; gap: 6px; }
 .cf-btn { padding: 4px 10px; border-radius: 6px; border: 1px dashed var(--color-leather-light); background: transparent; color: var(--color-leather-light); font-size: 11px; cursor: pointer; transition: all 0.15s; }
-.cf-btn:hover { background: var(--color-leather-light); color: white; border-style: solid; }
+.cf-btn:hover:not(:disabled) { background: var(--color-leather-light); color: white; border-style: solid; }
+.cf-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

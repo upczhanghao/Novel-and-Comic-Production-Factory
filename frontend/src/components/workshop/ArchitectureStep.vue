@@ -274,7 +274,7 @@ defineProps<{ state: ReturnType<typeof useWorkshopState> }>()
       </details>
 
       <!-- 续写区 -->
-      <details class="border border-[var(--color-parchment-darker)] rounded-lg">
+      <details id="continue-anchor" class="border border-[var(--color-parchment-darker)] rounded-lg">
         <summary class="px-4 py-2 cursor-pointer text-sm font-medium text-[var(--color-leather)] select-none">
           续写章节弧（扩展新章节）
         </summary>
