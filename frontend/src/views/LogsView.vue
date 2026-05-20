@@ -380,6 +380,9 @@ onMounted(() => {
 
     <!-- ── Prompt 历史 ───────────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'prompts'" class="space-y-3">
+      <div class="text-xs text-[var(--color-ink-light)] px-1">
+        ℹ️ Prompt 历史记录的是整个工作区（所有项目）的请求，不按项目隔离。
+      </div>
       <div class="module-action-row flex-wrap">
         <input v-model="promptSearch" @keyup.enter="loadPrompts"
           placeholder="搜索 prompt/response 关键词…"

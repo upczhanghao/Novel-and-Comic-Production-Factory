@@ -18,6 +18,7 @@ const props = defineProps<{
   hasScenes: boolean
   hasStoryboards: boolean
   hasImages: boolean
+  hasExport?: boolean
 }>()
 
 const emit = defineEmits<{ (e: 'goto', key: string): void }>()
@@ -30,7 +31,7 @@ const steps = computed<StepInfo[]>(() => {
     { key: 'scenes', label: '场景库', done: props.hasScenes, produces: 'scenes.txt', dependsOn: '角色卡', hint: '沉淀地点与光影' },
     { key: 'storyboards', label: '分镜表', done: props.hasStoryboards, produces: 'storyboards.json', dependsOn: '角色 + 场景', hint: '拆解为可执行镜头' },
     { key: 'images', label: '分镜生图', done: props.hasImages, produces: 'images/*.png', dependsOn: '分镜表 + 图片配置', hint: '为每个镜头生成参考图' },
-    { key: 'export', label: '导出', done: false, produces: 'csv / md / txt / zip', dependsOn: '上述任意产物', hint: '导出制片包' },
+    { key: 'export', label: '导出', done: props.hasExport || props.hasStoryboards, produces: 'csv / md / txt / zip', dependsOn: '上述任意产物', hint: '导出制片包' },
   ]
   // current = 第一个未完成
   const currentIdx = s.findIndex((it) => !it.done)

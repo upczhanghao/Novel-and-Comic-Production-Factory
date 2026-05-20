@@ -41,7 +41,7 @@ async function onSelectProject(name: string) {
   try {
     await projectStore.activateProject(name)
     saveStatus.value = 'saved'
-    feedback.success(`已切换到「${name}」`)
+    feedback.info(`已切换到「${name}」，正在加载内容…`)
     setTimeout(() => (saveStatus.value = 'idle'), 1500)
   } catch (e) {
     saveStatus.value = 'error'

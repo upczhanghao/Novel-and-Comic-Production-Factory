@@ -56,6 +56,6 @@ function iconFor(type: string) {
 .fb-leave-to { opacity: 0; transform: translateX(20px); }
 .fb-enter-active, .fb-leave-active { transition: all 0.25s ease; }
 @media (max-width: 640px) {
-  .fb-stack { left: 12px; right: 12px; bottom: 90px; max-width: none; }
+  .fb-stack { left: 12px; right: 12px; bottom: 140px; max-width: none; }
 }
 </style>

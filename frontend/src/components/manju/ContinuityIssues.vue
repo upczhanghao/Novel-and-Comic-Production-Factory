@@ -17,7 +17,7 @@ interface Shot {
   [k: string]: unknown
 }
 
-const props = defineProps<{ issues: Issue[]; shots: Shot[] }>()
+const props = defineProps<{ issues: Issue[]; shots: Shot[]; hasRun?: boolean }>()
 const emit = defineEmits<{ (e: 'jumpShot', shotId: string): void }>()
 
 const shotMap = computed(() => Object.fromEntries(props.shots.map((s) => [s.id, s])))
@@ -73,7 +73,9 @@ function shotChars(id?: string): string {
       </li>
     </ul>
   </div>
-  <div v-else class="ci-empty">尚未运行连续性检查，或当前数据无可识别的连续性问题。</div>
+  <div v-else class="ci-empty">
+    {{ props.hasRun ? '✅ 未发现连续性问题' : '尚未运行连续性检查。点击上方按钮开始检查。' }}
+  </div>
 </template>
 
 <style scoped>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { imagesApi } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
 import { useProjectStore } from '@/stores/project'
@@ -17,7 +17,10 @@ const feedback = useFeedbackStore()
 const tasks = useTasksStore()
 
 type Tab = 'queue' | 'records'
-const tab = ref<Tab>('queue')
+const TAB_KEY = 'nw.imageView.tab'
+const initialTab = (localStorage.getItem(TAB_KEY) as Tab) || 'queue'
+const tab = ref<Tab>(initialTab === 'records' ? 'records' : 'queue')
+watch(tab, (v) => localStorage.setItem(TAB_KEY, v))
 
 const selectedConfig = ref('')
 const positivePrompt = ref('')

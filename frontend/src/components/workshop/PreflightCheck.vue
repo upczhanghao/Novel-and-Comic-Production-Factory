@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { useWorkshopState } from '@/composables/useWorkshopState'
+import { useGenerateStore } from '@/stores/generate'
 
 const props = defineProps<{ state: ReturnType<typeof useWorkshopState>; step: string }>()
 const emit = defineEmits<{ (e: 'dismiss'): void }>()
+const generateStore = useGenerateStore()
 
 interface CheckItem { ok: boolean; label: string; hint: string }
 
@@ -26,18 +28,20 @@ const checks = computed<CheckItem[]>(() => {
   }
 
   if (props.step === 'blueprint' || props.step === 'chapter') {
+    const hasArch = Boolean(s.arch.value.result || s.seedText.value || generateStore.architectureContent)
     items.push({
-      ok: Boolean(s.arch.value.result || s.seedText.value),
+      ok: hasArch,
       label: '架构/核心种子',
-      hint: s.arch.value.result ? '已生成' : '请先完成架构生成',
+      hint: hasArch ? '已生成' : '请先完成架构生成',
     })
   }
 
   if (props.step === 'chapter') {
+    const hasBp = Boolean(s.bp.value.result || generateStore.blueprintContent)
     items.push({
-      ok: Boolean(s.bp.value.result),
+      ok: hasBp,
       label: '章节目录',
-      hint: s.bp.value.result ? '已生成' : '请先完成目录生成',
+      hint: hasBp ? '已生成' : '请先完成目录生成',
     })
   }
 

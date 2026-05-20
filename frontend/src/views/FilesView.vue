@@ -224,7 +224,7 @@ watch(() => projectStore.filepath, loadAll)
       <h2 class="text-2xl font-bold" style="color: var(--color-ink)">📁 项目浏览器</h2>
       <div>
         <div class="module-kicker">Project Browser</div>
-        <div class="module-subtitle">结构树、最近修改、全文搜索；支持预览、编辑、删除、批量下载。</div>
+        <div class="module-subtitle">结构树、最近修改、全文搜索；支持预览、编辑、删除、批量下载。仅显示 .txt / .json / .md 文件。</div>
       </div>
       <div class="module-action-row">
         <button @click="loadAll" class="px-3 py-1.5 rounded-md border border-[var(--color-parchment-darker)] text-sm bg-white" type="button">🔄 刷新</button>

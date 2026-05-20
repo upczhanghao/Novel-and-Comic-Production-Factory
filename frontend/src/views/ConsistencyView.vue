@@ -13,14 +13,15 @@ const state = ref({ running: false, progress: '', result: '', error: '' })
 
 function doCheck() {
   state.value = { running: true, progress: '', result: '', error: '' }
+  const targetChapter = chapterNum.value
   postSSE(
     '/consistency/check',
     {
       llm_config_name: llmConfig.value,
       filepath: projectStore.filepath,
-      chapter_num: chapterNum.value,
+      chapter_num: targetChapter,
     },
-    (msg) => { state.value.progress = msg },
+    (msg) => { state.value.progress = `第 ${targetChapter} 章 · ${msg}` },
     (content) => { state.value.result = content },
     (err) => { state.value.error = err; state.value.running = false },
     () => { state.value.running = false },

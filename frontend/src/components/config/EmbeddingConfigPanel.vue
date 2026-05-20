@@ -170,7 +170,7 @@ function statusFor(name: string) {
         <button class="cf-btn danger" type="button" :disabled="!selected" @click="deleteSelected">删除</button>
       </div>
 
-      <div v-if="selected" class="cf-health">
+      <div v-if="selected" class="cf-health" title="健康状态仅保存在当前浏览器，更换设备需重新测试">
         <span>{{ statusIcon(statusFor(selected).status) }}</span>
         <span class="cf-health-label">{{
           statusFor(selected).status === 'ok' ? '健康' :

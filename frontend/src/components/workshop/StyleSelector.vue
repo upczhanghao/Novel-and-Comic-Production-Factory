@@ -82,7 +82,9 @@ function toggleDNA(name: string) {
       </div>
     </div>
     <div v-if="!styles.length && !dnas.length" class="ss-empty">
-      尚未创建文风或叙事 DNA。前往「文风与DNA」页面添加。
+      尚未创建文风或叙事 DNA。前往
+      <router-link to="/styles" class="ss-link">「文风与DNA」</router-link>
+      页面添加。
     </div>
   </div>
 </template>
@@ -97,4 +99,5 @@ function toggleDNA(name: string) {
 .ss-chip.active { background: var(--color-ink); color: white; border-color: var(--color-ink); }
 .ss-chip.none { font-style: italic; }
 .ss-empty { font-size: 12px; color: var(--color-ink-light); padding: 8px 0; }
+.ss-link { color: var(--color-leather); text-decoration: underline; }
 </style>

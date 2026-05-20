@@ -114,6 +114,7 @@ const styleTemplates = ref<StyleTemplate[]>([])
 const selectedStyle = ref('')
 const dataMsg = ref('')
 const continuityIssues = ref<Array<Record<string, unknown>>>([])
+const continuityChecked = ref(false)
 const statsRows = ref<Array<{ name: string; count: number }>>([])
 const relationRows = ref<Array<{ source: string; target: string; count: number }>>([])
 const queueRows = ref<Array<Record<string, unknown>>>([])
@@ -126,14 +127,6 @@ const scriptEpisodeDuration = ref('3-5分钟')
 const scriptStyle = ref('竖屏漫剧，强钩子，快节奏，适合后续分镜和AI绘图')
 const scriptGuidance = ref('')
 const enhancingPrompts = ref(false)
-const pipelineSteps = computed(() => [
-  { name: '剧本', done: Boolean(scriptAdapt.value.result), hint: '先把小说改成可拍的竖屏漫剧正文' },
-  { name: '角色锁定', done: characterCards.value.length > 0, hint: '确认外貌、服装、禁忌变化点' },
-  { name: '场景库', done: Boolean(scenes.value.result), hint: '沉淀可复用地点和光影气氛' },
-  { name: '分镜表', done: storyboardShots.value.length > 0, hint: '把剧情拆成可执行镜头' },
-  { name: '生图提示词', done: storyboardShots.value.some((shot) => shot.prompt_positive), hint: '增强后再导入图片模块或单镜生图' },
-])
-
 const filepath = computed(() => projectStore.filepath)
 const chapterOptions = computed(() => chapters.value.map((c) => ({ value: c.num, label: `第${c.num}章 ${c.title}` })))
 const currentSettings = computed<ManjuSettings>(() => ({
@@ -406,6 +399,7 @@ async function enhancePrompts(kind = 'all') {
 async function runContinuityCheck() {
   const res = await manjuApi.continuityCheck(filepath.value)
   continuityIssues.value = res.data.issues ?? []
+  continuityChecked.value = true
   dataMsg.value = `连续性检查完成：${res.data.issue_count ?? 0} 个提示`
 }
 
@@ -752,22 +746,7 @@ watch(() => characters.value.running, (running, prev) => {
       @goto="gotoStep"
     />
 
-    <section class="module-panel p-4" id="manju-import">
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
-        <div
-          v-for="(step, idx) in pipelineSteps"
-          :key="step.name"
-          class="module-status"
-          :class="step.done ? 'success' : ''"
-        >
-          <div class="text-xs text-[var(--color-ink-light)]">Step {{ idx + 1 }}</div>
-          <div class="font-semibold text-sm" :class="step.done ? 'text-green-800' : 'text-[var(--color-leather)]'">
-            {{ step.done ? '已完成 · ' : '' }}{{ step.name }}
-          </div>
-          <div class="text-xs text-[var(--color-ink-light)] mt-1 leading-5">{{ step.hint }}</div>
-        </div>
-      </div>
-    </section>
+    <div id="manju-import" class="manju-anchor"></div>
 
     <div class="module-grid wide-aside">
       <aside class="space-y-4 module-aside-sticky">
@@ -801,7 +780,7 @@ watch(() => characters.value.running, (running, prev) => {
           >
             {{ importing ? '导入中...' : '解析章节目录' }}
           </button>
-          <div v-if="importMsg" class="text-sm" :class="importMsg.startsWith('✅') ? 'text-green-700' : 'text-red-600'">
+          <div v-if="importMsg" class="text-sm" :class="importMsg.startsWith('❌') ? 'text-red-600' : 'text-green-700'">
             {{ importMsg }}
           </div>
           <div v-if="meta" class="text-xs text-[var(--color-ink-light)] leading-6">
@@ -869,7 +848,7 @@ watch(() => characters.value.running, (running, prev) => {
           >
             保存为风格模板
           </button>
-          <div v-if="settingsMsg" class="text-sm" :class="settingsMsg.startsWith('✅') ? 'text-green-700' : 'text-red-600'">
+          <div v-if="settingsMsg" class="text-sm" :class="settingsMsg.startsWith('❌') ? 'text-red-600' : 'text-green-700'">
             {{ settingsMsg }}
           </div>
           <div v-if="appliedSettings" class="text-xs text-[var(--color-ink-light)] leading-6">
@@ -1229,6 +1208,7 @@ watch(() => characters.value.running, (running, prev) => {
               <ContinuityIssues
                 :issues="continuityIssues"
                 :shots="storyboardShots"
+                :has-run="continuityChecked"
                 @jump-shot="jumpToShot"
               />
               <div class="mt-3 grid grid-cols-2 gap-3 text-xs">

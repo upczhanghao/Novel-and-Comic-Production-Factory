@@ -121,14 +121,18 @@ def get_style(name: str):
     has_calibration_snapshot = False
     snapshot_timestamp = ""
     if os.path.exists(style_file):
-        with open(style_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        source_sample = data.get("source_sample", "")
-        calibration_reference = data.get("calibration_reference", "")
-        snapshot = data.get("pre_calibration_snapshot")
-        if snapshot:
-            has_calibration_snapshot = True
-            snapshot_timestamp = snapshot.get("timestamp", "")
+        try:
+            with open(style_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            source_sample = data.get("source_sample", "")
+            calibration_reference = data.get("calibration_reference", "")
+            snapshot = data.get("pre_calibration_snapshot")
+            if snapshot:
+                has_calibration_snapshot = True
+                snapshot_timestamp = snapshot.get("timestamp", "")
+        except (OSError, json.JSONDecodeError):
+            # 文件损坏或无法读取时不阻塞主响应；前端编辑器仍可基于 instruction/analysis 渲染
+            pass
     return {
         "style_name": name,
         "style_instruction": instruction,

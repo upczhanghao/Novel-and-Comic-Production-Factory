@@ -552,30 +552,33 @@ watch(() => configStore.embeddingChoices.slice(), (c) => {
     </div>
 
     <!-- 概念说明 -->
-    <section class="sv-explainer">
-      <div class="sv-explainer-item">
-        <div class="sv-explainer-head">🎨 风格指令（Style Instruction）</div>
-        <div class="sv-explainer-body">
-          一段紧凑的"文风摘要"，会被注入到<strong>章节正文草稿</strong>提示词，告诉 LLM 该用什么样的句式、用词、节奏写。<br />
-          来源：从样本文本分析得到（"分析新文风"），可经"迭代校准"反复优化。
+    <details class="sv-explainer-wrap">
+      <summary class="sv-explainer-summary">📖 文风 / 叙事 DNA 概念说明（点击展开）</summary>
+      <section class="sv-explainer">
+        <div class="sv-explainer-item">
+          <div class="sv-explainer-head">🎨 风格指令（Style Instruction）</div>
+          <div class="sv-explainer-body">
+            一段紧凑的"文风摘要"，会被注入到<strong>章节正文草稿</strong>提示词，告诉 LLM 该用什么样的句式、用词、节奏写。<br />
+            来源：从样本文本分析得到（"分析新文风"），可经"迭代校准"反复优化。
+          </div>
         </div>
-      </div>
-      <div class="sv-explainer-item">
-        <div class="sv-explainer-head">🧬 叙事DNA（Narrative DNA）</div>
-        <div class="sv-explainer-body">
-          分层（架构 / 蓝图 / 章节）的叙事模式指令。分别注入到对应阶段的生成提示词，决定<strong>结构层面</strong>的风格——
-          推进节奏、场景结构、对话密度等。<br />
-          需要在该文风存在的前提下，再单独执行"分析叙事DNA"。
+        <div class="sv-explainer-item">
+          <div class="sv-explainer-head">🧬 叙事DNA（Narrative DNA）</div>
+          <div class="sv-explainer-body">
+            分层（架构 / 蓝图 / 章节）的叙事模式指令。分别注入到对应阶段的生成提示词，决定<strong>结构层面</strong>的风格——
+            推进节奏、场景结构、对话密度等。<br />
+            需要在该文风存在的前提下，再单独执行"分析叙事DNA"。
+          </div>
         </div>
-      </div>
-      <div class="sv-explainer-item">
-        <div class="sv-explainer-head">⚙️ 在项目里如何生效？</div>
-        <div class="sv-explainer-body">
-          工坊每一步（架构/蓝图/章节）独立选择一个文风。如果选了某文风但它没有对应层的 DNA，将只使用风格指令；
-          如果有 DNA，会一并注入。本页面"应用到当前项目"会一次性更新选中阶段的文风字段。
+        <div class="sv-explainer-item">
+          <div class="sv-explainer-head">⚙️ 在项目里如何生效？</div>
+          <div class="sv-explainer-body">
+            工坊每一步（架构/蓝图/章节）独立选择一个文风。如果选了某文风但它没有对应层的 DNA，将只使用风格指令；
+            如果有 DNA，会一并注入。本页面"应用到当前项目"会一次性更新选中阶段的文风字段。
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </details>
 
     <section class="sv-grid">
       <!-- 左：文风库 -->
@@ -960,7 +963,10 @@ watch(() => configStore.embeddingChoices.slice(), (c) => {
   background: white; color: #c2410c; border: 1px solid #fdba74; cursor: pointer; }
 
 /* 说明 */
-.sv-explainer { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sv-explainer-wrap { background: var(--color-surface-muted); border: 1px solid var(--color-control-border); border-radius: 10px; padding: 0 12px; }
+.sv-explainer-summary { padding: 8px 0; cursor: pointer; font-size: 12px; color: var(--color-ink-light); user-select: none; }
+.sv-explainer-wrap[open] .sv-explainer-summary { border-bottom: 1px solid var(--color-control-border); margin-bottom: 8px; }
+.sv-explainer { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding-bottom: 12px; }
 @media (max-width: 1024px) { .sv-explainer { grid-template-columns: 1fr; } }
 .sv-explainer-item { padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; }
 .sv-explainer-head { font-size: 12px; font-weight: 700; color: #78350f; margin-bottom: 4px; }

@@ -66,7 +66,9 @@ function doExtract() {
           class="btn-primary"
           type="button"
         >
-          {{ state.detailedOutline.value.running ? '生成中…' : `▶ 生成第${state.outlineBatchStart.value}-${Math.min(state.outlineBatchStart.value + state.outlineBatchSize.value - 1, state.numChapters.value)}章细纲` }}
+          <template v-if="state.detailedOutline.value.running">生成中…</template>
+          <template v-else-if="state.outlineBatchStart.value > state.numChapters.value">✓ 全部章节细纲已生成</template>
+          <template v-else>▶ 生成第{{ state.outlineBatchStart.value }}-{{ Math.min(state.outlineBatchStart.value + state.outlineBatchSize.value - 1, state.numChapters.value) }}章细纲</template>
         </button>
       </div>
 

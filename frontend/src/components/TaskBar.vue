@@ -36,7 +36,7 @@ function statusLabel(t: TaskItem) {
       <div v-if="expanded" class="tb-panel">
         <div class="tb-header">
           <span>任务列表</span>
-          <button class="tb-clear" @click="tasks.tasks.filter(t => t.status !== 'running').forEach(t => tasks.remove(t.id))" type="button">清除已结束</button>
+          <button class="tb-clear" @click="tasks.clearFinished()" type="button">清除已结束</button>
         </div>
         <div class="tb-items">
           <div v-for="t in visibleTasks" :key="t.id" class="tb-item" :class="`tb-${t.status}`">

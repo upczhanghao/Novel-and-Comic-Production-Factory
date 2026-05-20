@@ -574,6 +574,7 @@ export function useWorkshopState() {
   function doGenerateArch() {
     const s = arch.value
     s.running = true; s.progress = ''; s.result = ''; s.error = ''; s.progressValue = undefined
+    s.startedAt = Date.now(); s.endedAt = undefined
     const handle = postSSE(
       '/generate/architecture',
       {
@@ -599,8 +600,8 @@ export function useWorkshopState() {
           s.result = content
         }
       },
-      (err) => { s.error = err; s.running = false },
-      () => { s.running = false; s.sseHandle = null },
+      (err) => { s.error = err; s.running = false; s.endedAt = Date.now() },
+      () => { s.running = false; s.endedAt = Date.now(); s.sseHandle = null },
     )
     s.sseHandle = handle
   }

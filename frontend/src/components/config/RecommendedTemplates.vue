@@ -21,6 +21,7 @@ function badgeFor(kind: TemplateKind) {
         type="button"
         class="rt-card"
         :class="`kind-${t.kind}`"
+        :aria-label="`应用模板：${t.label}（${badgeFor(t.kind)}）`"
         @click="emit('apply', t)"
       >
         <div class="rt-card-top">

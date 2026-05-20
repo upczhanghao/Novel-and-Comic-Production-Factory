@@ -52,5 +52,9 @@ export const useTasksStore = defineStore('tasks', () => {
     tasks.value = tasks.value.filter((t) => t.id !== id)
   }
 
-  return { tasks, activeTasks, hasRunning, register, update, finish, cancel, remove }
+  function clearFinished() {
+    tasks.value = tasks.value.filter((t) => t.status === 'running')
+  }
+
+  return { tasks, activeTasks, hasRunning, register, update, finish, cancel, remove, clearFinished }
 })

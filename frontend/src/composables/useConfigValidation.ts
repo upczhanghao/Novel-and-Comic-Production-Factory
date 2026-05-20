@@ -18,7 +18,7 @@ function checkName(name: string, r: ValidationResult) {
 function checkUrl(url: string, field: string, r: ValidationResult) {
   if (!url.trim()) return
   if (!/^https?:\/\//i.test(url)) r.errors[field] = '必须以 http:// 或 https:// 开头'
-  else if (url.endsWith('/')) r.warnings[field] = '末尾的 / 可能导致路径拼接问题'
+  else if (url.endsWith('/')) r.warnings[field] = '末尾的 / 通常不需要，系统会自动拼接路径'
 }
 
 function checkApiKey(key: string, field: string, r: ValidationResult, isEdit: boolean) {

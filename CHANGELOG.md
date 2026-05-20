@@ -3,6 +3,48 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.1.2] - 2026-05-21
+
+### Polish — P2 审计打磨 (28 项轻量优化)
+
+**Workshop (L1–L9)**
+- L1: StyleSelector 收起后可再次展开（按钮文案动态切换）
+- L2: 草稿恢复横幅时间格式支持「N 天前 / 具体日期」，不再把 2 天前显示成 "1 小时前"
+- L3: StyleSelector 空状态中的「文风与DNA」变为真实路由链接
+- L4: 切换项目 toast 文案改为「已切换到…正在加载内容」，反映实际异步过程
+- L5: 一致性检查进度信息前缀显示章节号
+- L6: PreflightCheck 同时检查 `generateStore` 中已加载的架构/蓝图内容，刷新后不误报
+- L7: `doGenerateArch` 设置 `startedAt`/`endedAt`，ResultSummary 显示耗时
+- L8: BatchGenerate 描述去掉错误的「步骤3」指代，改为「上方所选」
+- L9: 细纲批次按钮在全部章节已生成时显示「✓ 全部章节细纲已生成」而非破损的「N+1 - N 章」
+
+**Manju (L10–L16)**
+- L10: 移除与 ManjuSteps 重复的 pipelineSteps 旧栅格
+- L11: PromptTemplatePreview 标签更准确，说明花括号占位符由 AI 填充
+- L12: ContinuityIssues 新增 `hasRun` prop，空态可区分「未运行」与「无问题」
+- L13: 经 S18 的 keep-alive 项目 key 修复后，切换到 /images 再返回保留分镜表单状态
+- L14: ImageView 标签页（队列 / 记录）持久化到 localStorage
+- L15: ManjuSteps「导出」步骤的完成态接受 `hasExport` prop，分镜表生成后默认显示已就绪
+- L16: importMsg/settingsMsg 颜色判定从 `startsWith('✅')` 改为 `startsWith('❌')`，后端中性消息不再误判为红色
+
+**Config (L17–L22)**
+- L17: LLM/Embedding/Image 配置面板的健康状态徽标加 tooltip 说明仅保存在本地浏览器
+- L18: StylesView 概念说明三栏移入可折叠 `<details>`，默认收起减少首屏视觉负担
+- L19: PresetsView 重置/删除 confirm 提示语补充「此操作不可撤销」
+- L20: Base URL 末尾 `/` 警告文案改为「通常不需要，系统会自动拼接路径」（不再暗示路径拼接错误）
+- L21: `get_style` 读取扩展 JSON 字段时增加 try/except，文件损坏时不影响主响应
+- L22: RecommendedTemplates 模板卡片加 `aria-label`，屏幕阅读器可读
+
+**Shell (L23–L28)**
+- L23: 路由列表三处重复属架构级整改（A14），不在 P2 范围内
+- L24: 抽取 `tasks.clearFinished()` 方法替代 TaskBar 内联闭包
+- L25: 移动端 FeedbackCenter 底部偏移从 90px 提升到 140px，避开 TaskBar + 底部导航
+- L26: FilesView 内部 refs 抽 composable 属代码组织级，不在 P2 范围内
+- L27: FilesView 副标题补充「仅显示 .txt / .json / .md 文件」说明白名单
+- L28: LogsView Prompt 历史顶部加灰色说明「整个工作区，不按项目隔离」
+
+---
+
 ## [2.1.1] - 2026-05-21
 
 ### Fixed — P0 审计修复 (22 项关键工作流/数据丢失问题)

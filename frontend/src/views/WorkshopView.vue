@@ -128,13 +128,14 @@ const preflightStep = computed(() => {
 
     <PreflightCheck v-if="showPreflight" :state="state" :step="preflightStep" @dismiss="showPreflight = false" />
 
-    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-5 space-y-3"
-         v-if="showStyleSelector">
+    <div class="rounded-xl border border-[var(--color-parchment-darker)] bg-white p-5 space-y-3">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold text-[var(--color-leather)]">文风 / 叙事 DNA</h3>
-        <button class="text-xs text-[var(--color-ink-light)]" @click="showStyleSelector = false" type="button">收起</button>
+        <button class="text-xs text-[var(--color-ink-light)]" @click="showStyleSelector = !showStyleSelector" type="button">
+          {{ showStyleSelector ? '收起' : '展开' }}
+        </button>
       </div>
-      <StyleSelector :state="state" />
+      <StyleSelector v-show="showStyleSelector" :state="state" />
     </div>
 
     <CarryForward :state="state" />

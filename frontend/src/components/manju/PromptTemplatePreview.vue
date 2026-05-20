@@ -48,7 +48,7 @@ const kindLabel = computed(() => {
       {{ show ? '收起' : '预览' }}{{ kindLabel }}提示词模板
     </button>
     <div v-if="show" class="tp-preview">
-      <div class="tp-label">生成后的提示词大致结构：</div>
+      <div class="tp-label">AI 生成提示词时使用的模板结构（花括号部分由 AI 根据内容自动填充）：</div>
       <pre class="tp-code">{{ template }}</pre>
       <div class="tp-note">花括号 {} 内的内容会被 AI 根据角色/场景/剧情自动填充。</div>
     </div>
