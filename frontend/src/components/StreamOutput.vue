@@ -86,8 +86,8 @@ watch(
 <template>
   <div
     ref="containerRef"
-    class="relative rounded-lg border border-[var(--color-parchment-darker)] bg-[var(--color-spine)] text-[var(--color-parchment)] font-mono text-sm overflow-y-auto"
-    style="min-height: 160px; max-height: 70vh"
+    class="relative rounded-lg border border-[var(--color-parchment-darker)] font-mono text-sm overflow-y-auto"
+    style="min-height: 160px; max-height: 70vh; background-color: var(--color-spine); color: var(--color-parchment)"
   >
     <!-- 运行指示条 -->
     <div
@@ -134,12 +134,12 @@ watch(
         v-if="editable && (result || hasEdited)"
         :value="result"
         @input="onEdit($event)"
-        class="w-full bg-transparent text-[var(--color-parchment)] resize-none outline-none whitespace-pre-wrap leading-relaxed"
-        style="min-height: 300px"
+        class="w-full resize-none outline-none whitespace-pre-wrap leading-relaxed"
+        style="min-height: 300px; background-color: transparent; color: var(--color-parchment); border-color: transparent !important"
         :placeholder="placeholder"
       />
       <!-- 结果：只读模式 -->
-      <pre v-else-if="result && !editable" class="whitespace-pre-wrap leading-relaxed text-[var(--color-parchment-dark)]">{{ result }}</pre>
+      <pre v-else-if="result && !editable" class="whitespace-pre-wrap leading-relaxed" style="color: var(--color-parchment)">{{ result }}</pre>
 
       <!-- 占位符 -->
       <p

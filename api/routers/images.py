@@ -43,7 +43,7 @@ def generate_image(body: ImageGenerateRequest):
     config = _get_image_config(body.config_name)
     out_path = save_generated_image(config, prompt, body.filepath, body.source_type, body.source_id)
     payload = {
-        **image_response_payload(out_path, prompt, body.config_name),
+        **image_response_payload(out_path, prompt, body.config_name, config),
         "id": os.path.splitext(os.path.basename(out_path))[0],
         "source_type": body.source_type,
         "source_id": body.source_id,
@@ -126,6 +126,51 @@ def delete_generated_image_record(record_id: str, filepath: str = "./output", de
     filepath = normalize_project_path(filepath, allow_blank=False)
     rows = delete_image_record(filepath, record_id=record_id, delete_file=delete_file)
     return {"message": "✅ 已删除生成记录", "items": rows, "count": len(rows), "save_dir": images_dir(filepath)}
+
+
+@router.post("/images/records/batch-delete")
+def batch_delete_generated_image_records(body: dict):
+    filepath = normalize_project_path(str(body.get("filepath") or "./output"), allow_blank=False)
+    ids = [str(x) for x in (body.get("ids") or []) if str(x).strip()]
+    delete_file = bool(body.get("delete_file", True))
+    if not ids:
+        raise HTTPException(status_code=400, detail="未提供要删除的记录")
+    rows: list = []
+    failed: list[str] = []
+    for record_id in ids:
+        try:
+            rows = delete_image_record(filepath, record_id=record_id, delete_file=delete_file)
+        except HTTPException:
+            failed.append(record_id)
+    return {
+        "message": f"✅ 已删除 {len(ids) - len(failed)} 条生成记录" + (f"，{len(failed)} 条未找到" if failed else ""),
+        "items": rows,
+        "count": len(rows),
+        "failed": failed,
+        "save_dir": images_dir(filepath),
+    }
+
+
+@router.post("/images/prompts/batch-delete")
+def batch_delete_image_prompts(body: dict):
+    filepath = normalize_project_path(str(body.get("filepath") or "./output"), allow_blank=False)
+    ids = [str(x) for x in (body.get("ids") or []) if str(x).strip()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="未提供要删除的提示词")
+    rows: list = []
+    failed: list[str] = []
+    for item_id in ids:
+        try:
+            rows = delete_image_prompt_item(filepath, item_id)
+        except HTTPException:
+            failed.append(item_id)
+    return {
+        "message": f"✅ 已删除 {len(ids) - len(failed)} 条提示词" + (f"，{len(failed)} 条未找到" if failed else ""),
+        "items": rows,
+        "count": len(rows),
+        "failed": failed,
+        "save_dir": images_dir(filepath),
+    }
 
 
 @router.get("/images/file")

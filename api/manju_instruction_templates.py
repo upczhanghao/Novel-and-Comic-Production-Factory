@@ -307,6 +307,7 @@ def list_manju_instruction_templates(config: dict[str, Any]) -> dict[str, dict[s
         else:
             item["customized"] = False
         item["key"] = key
+        item["default_content"] = default["content"]
         templates[key] = item
     return templates
 

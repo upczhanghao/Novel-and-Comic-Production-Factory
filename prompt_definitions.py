@@ -98,6 +98,75 @@ PROMPT_DISPLAY_NAMES = {
 }
 
 # ============================================================
+# 提示词元数据（分类 / 标签 / 用途说明）
+# 用于前端"库 + 预览 + 应用"形态展示，便于检索与对比
+# ============================================================
+PROMPT_CATEGORIES = {
+    "architecture": {"label": "架构层", "description": "世界观、人物、情节框架等顶层设定", "order": 1},
+    "blueprint":    {"label": "蓝图层", "description": "章节目录与全局节奏规划", "order": 2},
+    "chapter":      {"label": "章节层", "description": "正文草稿生成与场景扩写", "order": 3},
+    "summary":      {"label": "摘要/记忆", "description": "前文压缩、章节摘要与角色状态", "order": 4},
+    "knowledge":    {"label": "知识库", "description": "检索与过滤等知识库相关流程", "order": 5},
+    "continuation": {"label": "续写", "description": "续写场景下扩展的世界观与角色", "order": 6},
+    "compress":     {"label": "上下文压缩", "description": "压缩长篇上下文以节省 token", "order": 7},
+    "style":        {"label": "文风与DNA", "description": "文风分析、融合、校准与叙事DNA", "order": 8},
+    "misc":         {"label": "其他", "description": "创意讨论、细纲、角色导入等辅助流程", "order": 9},
+}
+
+PROMPT_META = {
+    "core_seed_prompt":                       {"category": "architecture", "tags": ["核心立意", "雪花写作法"],   "description": "最先生成，决定整本书的主题、悬念支柱与目标读者"},
+    "character_dynamics_prompt":              {"category": "architecture", "tags": ["人物", "动力学"],         "description": "围绕主线生成主要角色与其内在张力"},
+    "world_building_prompt":                  {"category": "architecture", "tags": ["世界观", "矩阵"],         "description": "生成多维度世界设定，给后续情节提供舞台"},
+    "plot_architecture_prompt":               {"category": "architecture", "tags": ["情节", "三幕"],           "description": "整体情节弧、转折点与高潮安排"},
+    "create_character_state_prompt":          {"category": "architecture", "tags": ["人物", "状态"],           "description": "为每个角色生成初始状态卡（属性 / 关系 / 物品）"},
+
+    "chapter_blueprint_prompt":               {"category": "blueprint",    "tags": ["章节目录"],               "description": "一次性生成全书章节目录"},
+    "chunked_chapter_blueprint_prompt":       {"category": "blueprint",    "tags": ["章节目录", "分块"],       "description": "分块生成章节目录，适合超长篇"},
+    "detailed_outline_prompt":                {"category": "blueprint",    "tags": ["细纲", "精简"],           "description": "为单章生成精简版细纲（推荐网络小说）"},
+    "detailed_outline_prompt_detailed":       {"category": "blueprint",    "tags": ["细纲", "详细"],           "description": "为单章生成详细分镜级细纲（推荐严肃文学）"},
+
+    "first_chapter_draft_prompt":             {"category": "chapter",      "tags": ["开篇", "草稿"],           "description": "生成第一章正文草稿（含开场钩子）"},
+    "next_chapter_draft_prompt":              {"category": "chapter",      "tags": ["正文", "草稿"],           "description": "基于前文摘要继续生成后续章节"},
+    "scene_expansion_prompt":                 {"category": "chapter",      "tags": ["扩写", "场景"],           "description": "对单一场景做精细扩写（用于工坊/扩写）"},
+
+    "summarize_recent_chapters_prompt":       {"category": "summary",      "tags": ["章节摘要", "上下文"],     "description": "为下一章生成精准的本章摘要"},
+    "summary_prompt":                         {"category": "summary",      "tags": ["前文摘要"],               "description": "增量更新整本书的全局摘要"},
+    "update_character_state_prompt":          {"category": "summary",      "tags": ["人物", "状态"],           "description": "章节结束后更新角色状态卡"},
+
+    "knowledge_search_prompt":                {"category": "knowledge",    "tags": ["检索"],                   "description": "从知识库中检索与本章相关的素材"},
+    "knowledge_filter_prompt":                {"category": "knowledge",    "tags": ["过滤"],                   "description": "过滤检索结果，保留最相关片段"},
+    "Character_Import_Prompt":                {"category": "misc",         "tags": ["角色导入"],               "description": "解析用户上传的角色资料"},
+
+    "continuation_seed_prompt":               {"category": "continuation", "tags": ["续写", "种子"],           "description": "续写场景：生成新的方向大纲"},
+    "continuation_world_prompt":              {"category": "continuation", "tags": ["续写", "世界观"],         "description": "续写场景：扩展世界观"},
+    "continuation_characters_prompt":         {"category": "continuation", "tags": ["续写", "人物"],           "description": "续写场景：新增角色"},
+    "continuation_arcs_prompt":               {"category": "continuation", "tags": ["续写", "剧情弧"],         "description": "续写场景：新增剧情弧"},
+    "continuation_char_state_prompt":         {"category": "continuation", "tags": ["续写", "角色状态"],       "description": "续写场景：新角色初始状态"},
+    "continuation_architecture_prompt":       {"category": "continuation", "tags": ["续写", "架构汇总"],       "description": "续写场景：汇总并产出新架构"},
+
+    "compress_summary_prompt":                {"category": "compress",     "tags": ["压缩", "摘要"],           "description": "压缩前文摘要以节省 token"},
+    "compress_character_state_prompt":        {"category": "compress",     "tags": ["压缩", "角色"],           "description": "压缩冗长的角色状态文本"},
+    "compress_world_building_prompt":         {"category": "compress",     "tags": ["压缩", "世界观"],         "description": "压缩世界观以保留核心条目"},
+
+    "style_analysis_prompt":                  {"category": "style",        "tags": ["文风分析"],               "description": "从样本提取文风特征生成指令"},
+    "style_merge_prompt":                     {"category": "style",        "tags": ["文风融合"],               "description": "将多种文风指令融合为一个"},
+    "narrative_dna_analysis_prompt":          {"category": "style",        "tags": ["叙事DNA"],                "description": "提取分层叙事DNA（架构/蓝图/章节）"},
+    "style_calibration_generate_prompt":      {"category": "style",        "tags": ["校准", "文风", "生成"],   "description": "文风迭代校准 - 生成测试文本"},
+    "style_calibration_discriminate_prompt":  {"category": "style",        "tags": ["校准", "文风", "判别"],   "description": "文风迭代校准 - 图灵盲测判别器"},
+    "style_calibration_revise_prompt":        {"category": "style",        "tags": ["校准", "文风", "修订"],   "description": "文风迭代校准 - 修订风格指令"},
+    "narrative_calibration_generate_prompt":  {"category": "style",        "tags": ["校准", "叙事", "生成"],   "description": "叙事DNA迭代校准 - 生成测试文本"},
+    "narrative_calibration_discriminate_prompt": {"category": "style",     "tags": ["校准", "叙事", "判别"],   "description": "叙事DNA迭代校准 - 模式判别"},
+    "narrative_calibration_revise_prompt":    {"category": "style",        "tags": ["校准", "叙事", "修订"],   "description": "叙事DNA迭代校准 - 修订章节指令"},
+
+    "brainstorm_system_prompt":               {"category": "misc",         "tags": ["创意讨论"],               "description": "BrainstormView 的系统提示词"},
+}
+
+def get_prompt_meta(key: str) -> dict:
+    """返回某 prompt 的元数据；未配置则给出 misc 默认。"""
+    return PROMPT_META.get(key, {"category": "misc", "tags": [], "description": ""})
+
+
+# ============================================================
 # 默认提示词内容（内置于代码，作为 fallback）
 # ============================================================
 _DEFAULT_PROMPTS = {}

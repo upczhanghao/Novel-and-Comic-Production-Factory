@@ -11,10 +11,12 @@ export type StepState = {
   error: string
   progressValue?: number
   sseHandle?: { abort: () => void } | null
+  startedAt?: number | null
+  endedAt?: number | null
 }
 
 export const mkState = (): StepState => ({
-  running: false, progress: '', result: '', error: '', progressValue: undefined, sseHandle: null,
+  running: false, progress: '', result: '', error: '', progressValue: undefined, sseHandle: null, startedAt: null, endedAt: null,
 })
 
 export function useWorkshopState() {
@@ -421,6 +423,8 @@ export function useWorkshopState() {
     state.result = ''
     state.error = ''
     state.progressValue = undefined
+    state.startedAt = Date.now()
+    state.endedAt = null
     const handle = postSSE(
       url, body,
       (msg, value, content) => {
@@ -430,8 +434,8 @@ export function useWorkshopState() {
         if (content) state.result = content
       },
       (content) => { state.result = content },
-      (err) => { state.error = err; state.running = false },
-      () => { state.running = false; state.sseHandle = null },
+      (err) => { state.error = err; state.running = false; state.endedAt = Date.now() },
+      () => { state.running = false; state.sseHandle = null; state.endedAt = Date.now() },
     )
     state.sseHandle = handle
   }
@@ -449,12 +453,14 @@ export function useWorkshopState() {
     state.result = ''
     state.error = ''
     state.progressValue = undefined
+    state.startedAt = Date.now()
+    state.endedAt = null
     const handle = postSSE(
       url, body,
       (msg, value) => { state.progress = msg; if (value !== undefined) state.progressValue = value },
       (content) => { state.result = content; textRef.value = content },
-      (err) => { state.error = err; state.running = false },
-      () => { state.running = false; state.sseHandle = null },
+      (err) => { state.error = err; state.running = false; state.endedAt = Date.now() },
+      () => { state.running = false; state.sseHandle = null; state.endedAt = Date.now() },
     )
     state.sseHandle = handle
   }

@@ -180,70 +180,157 @@ def delete_style(name: str):
 
 # ── 作者参考库（绑定到文风）──────────────────────────────────────────────────
 
-@router.post("/styles/{name}/author-reference/import")
-async def import_author_reference(
-    name: str,
-    emb_config_name: str = Form(...),
-    file: UploadFile = File(...),
-):
+from typing import Optional
+from fastapi import Query
+from api.library_helpers import resolve_embedding_adapter, author_ref_cfg
+from api import library_service as lib
+
+
+def _author_cfg(name: str):
     app = get_web_app()
-
-    if not emb_config_name or emb_config_name not in app.config.get("embedding_configs", {}):
-        raise HTTPException(status_code=400, detail="❌ 请先选择有效的 Embedding 配置")
-
-    # 验证文风存在
     style_file = os.path.join(app.get_styles_dir(), f"{name}.json")
     if not os.path.exists(style_file):
         raise HTTPException(status_code=404, detail=f"❌ 文风「{name}」不存在")
+    return author_ref_cfg(name, app.get_styles_dir())
 
-    emb_conf = app.config["embedding_configs"][emb_config_name]
 
-    import tempfile, logging
-    await file.seek(0)
+@router.post("/styles/{name}/author-reference/import")
+async def import_author_reference(
+    name: str,
+    emb_config_name: str = Form(""),
+    file: UploadFile = File(...),
+    tags: str = Form(""),
+):
+    app = get_web_app()
+    cfg = _author_cfg(name)
+    emb = resolve_embedding_adapter(app, emb_config_name)
     file_bytes = await file.read()
-    logging.info(f"作者参考库上传文件大小: {len(file_bytes)} bytes, filename={file.filename}")
     if not file_bytes:
         raise HTTPException(status_code=400, detail="❌ 上传的文件内容为空")
-
-    suffix = os.path.splitext(file.filename)[1] if file.filename else ".txt"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="wb") as tmp:
-        tmp.write(file_bytes)
-        tmp_path = tmp.name
-
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     try:
-        from novel_generator.knowledge import import_author_reference_file
-        import_author_reference_file(
-            embedding_api_key=emb_conf["api_key"],
-            embedding_url=emb_conf["base_url"],
-            embedding_interface_format=emb_conf.get("interface_format", emb_config_name),
-            embedding_model_name=emb_conf["model_name"],
-            file_path=tmp_path,
-            style_name=name,
-            styles_dir=app.get_styles_dir(),
+        rec = lib.import_file(
+            cfg, emb,
+            file_bytes=file_bytes,
+            original_filename=file.filename or "unknown.txt",
+            tags=tag_list,
+            author=name,
         )
-        return {"message": f"✅ 作者参考库已导入到文风「{name}」!"}
+        return {
+            "message": f"✅ 已导入「{rec['filename']}」— {rec['chunks']} 个片段已索引",
+            "record": rec,
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"❌ 导入失败: {str(e)}")
-    finally:
-        os.unlink(tmp_path)
+        raise HTTPException(status_code=500, detail=f"❌ 导入失败: {e}")
+
+
+@router.get("/styles/{name}/author-reference/files")
+def list_author_ref_files(name: str):
+    return {"files": lib.list_files(_author_cfg(name))}
+
+
+@router.get("/styles/{name}/author-reference/stats")
+def author_ref_stats(name: str, emb_config_name: str = Query("")):
+    app = get_web_app()
+    cfg = _author_cfg(name)
+    emb = None
+    try:
+        emb = resolve_embedding_adapter(app, emb_config_name)
+    except HTTPException:
+        pass
+    return lib.stats(cfg, emb)
+
+
+@router.delete("/styles/{name}/author-reference/files/{file_id}")
+def delete_author_ref_file(name: str, file_id: str, emb_config_name: str = Query("")):
+    app = get_web_app()
+    emb = resolve_embedding_adapter(app, emb_config_name)
+    try:
+        rec = lib.delete_file(_author_cfg(name), emb, file_id)
+        return {"message": f"✅ 已删除「{rec.get('filename', file_id)}」", "record": rec}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+
+@router.put("/styles/{name}/author-reference/files/{file_id}")
+def update_author_ref_file(name: str, file_id: str, body: dict):
+    try:
+        rec = lib.update_metadata(
+            _author_cfg(name), file_id,
+            filename=body.get("filename"),
+            tags=body.get("tags"),
+            author=body.get("author"),
+        )
+        return {"message": "✅ 已更新", "record": rec}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+
+@router.post("/styles/{name}/author-reference/files/{file_id}/replace")
+async def replace_author_ref_file(
+    name: str, file_id: str,
+    emb_config_name: str = Form(""),
+    file: UploadFile = File(...),
+):
+    app = get_web_app()
+    emb = resolve_embedding_adapter(app, emb_config_name)
+    content_bytes = await file.read()
+    try:
+        rec = lib.replace_file(
+            _author_cfg(name), emb,
+            file_id=file_id,
+            file_bytes=content_bytes,
+            original_filename=file.filename,
+        )
+        return {"message": f"✅ 已替换「{rec['filename']}」— {rec['chunks']} 个片段", "record": rec}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"❌ 替换失败: {e}")
+
+
+@router.get("/styles/{name}/author-reference/search")
+def search_author_ref(
+    name: str,
+    query: str = Query(...),
+    emb_config_name: str = Query(""),
+    k: int = Query(6),
+    file_id: Optional[str] = Query(None),
+):
+    app = get_web_app()
+    emb = resolve_embedding_adapter(app, emb_config_name)
+    hits = lib.search(_author_cfg(name), emb, query=query, k=k, file_id=file_id)
+    return {"hits": hits}
+
+
+@router.get("/styles/{name}/author-reference/files/{file_id}/source")
+def get_author_ref_source(name: str, file_id: str):
+    text = lib.get_source_text(_author_cfg(name), file_id)
+    if text is None:
+        raise HTTPException(status_code=404, detail="源文件不存在")
+    return {"text": text}
 
 
 @router.delete("/styles/{name}/author-reference")
 def clear_author_reference(name: str):
+    lib.clear_library(_author_cfg(name))
+    return {"message": f"✅ 文风「{name}」的作者参考库已清空"}
+
+
+@router.post("/styles/{name}/author-reference/rebuild")
+def rebuild_author_ref(name: str, body: dict):
     app = get_web_app()
-    from novel_generator.vectorstore_utils import clear_author_vector_store
-    try:
-        clear_author_vector_store(style_name=name, styles_dir=app.get_styles_dir())
-        return {"message": f"✅ 文风「{name}」的作者参考库已清空"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"❌ 清空失败: {str(e)}")
+    emb = resolve_embedding_adapter(app, body.get("emb_config_name", ""))
+    result = lib.rebuild_library(_author_cfg(name), emb)
+    return {"message": f"✅ 重建完成：成功 {result['ok']}，失败 {result['failed']}", **result}
 
 
 @router.get("/styles/{name}/author-reference/status")
 def author_reference_status(name: str):
-    """检查文风是否有作者参考库"""
-    app = get_web_app()
-    from novel_generator.vectorstore_utils import get_author_vectorstore_dir
-    store_dir = get_author_vectorstore_dir(style_name=name, styles_dir=app.get_styles_dir())
-    exists = os.path.exists(store_dir) and os.listdir(store_dir)
-    return {"has_author_reference": bool(exists)}
+    cfg = _author_cfg(name)
+    s = lib.stats(cfg)
+    return {
+        "has_author_reference": s["exists"] and s["file_count"] > 0,
+        "file_count": s["file_count"],
+        "manifest_chunks": s["manifest_chunks"],
+    }

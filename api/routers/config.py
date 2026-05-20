@@ -11,6 +11,9 @@ from api.schemas import (
     ImageConfigCreate,
     TestLLMConfigRequest,
     TestEmbeddingConfigRequest,
+    TestImageConfigRequest,
+    SetLLMDefaultRequest,
+    SetDefaultRequest,
 )
 from api.app_state import get_web_app
 from api.manju_instruction_templates import (
@@ -19,12 +22,20 @@ from api.manju_instruction_templates import (
     save_manju_instruction_template,
 )
 from api.sse_utils import run_with_sse
-from api.image_service import normalize_image_config, safe_image_config
+from api.image_service import normalize_image_config, safe_image_config, generate_image_bytes
 from api.security import redact_secrets
 from embedding_adapters import create_embedding_adapter, clear_embedding_cache
 from llm_adapters import create_llm_adapter
 
 router = APIRouter(tags=["config"])
+
+LLM_DEFAULT_SLOTS = (
+    "architecture_llm",
+    "chapter_outline_llm",
+    "final_chapter_llm",
+    "consistency_review_llm",
+    "prompt_draft_llm",
+)
 
 def _named_configs(configs: dict) -> dict:
     """Drop blank/whitespace config names so frontend choices stay valid."""
@@ -80,7 +91,8 @@ def list_embedding_configs():
     configs = _named_configs(app.config.get("embedding_configs", {}))
     return {
         "configs": redact_secrets(configs),
-        "choices": list(configs.keys())
+        "choices": list(configs.keys()),
+        "default": app.config.get("default_embedding_config", ""),
     }
 
 
@@ -117,6 +129,7 @@ def list_image_configs():
     return {
         "configs": safe_configs,
         "choices": list(configs.keys()),
+        "default": app.config.get("default_image_config", ""),
     }
 
 
@@ -144,6 +157,101 @@ def delete_image_config(name: str):
     from config_manager import save_config
     save_config(app.config, app.config_file)
     return {"message": "✅ 图片生成配置已删除"}
+
+
+# ── 默认配置设置 ─────────────────────────────────────────────────────────────
+
+@router.put("/config/llm/default")
+def set_llm_default(body: SetLLMDefaultRequest):
+    if body.slot not in LLM_DEFAULT_SLOTS:
+        raise HTTPException(status_code=400, detail=f"无效的 slot：{body.slot}")
+    app = get_web_app()
+    configs = app.config.get("llm_configs", {})
+    if body.config_name not in configs:
+        raise HTTPException(status_code=400, detail=f"配置「{body.config_name}」不存在")
+    choose = app.config.setdefault("choose_configs", {})
+    choose[body.slot] = body.config_name
+    from config_manager import save_config
+    save_config(app.config, app.config_file)
+    return {"message": f"✅ 已将 {body.slot} 默认设为「{body.config_name}」"}
+
+
+@router.put("/config/embedding/default")
+def set_embedding_default(body: SetDefaultRequest):
+    app = get_web_app()
+    configs = app.config.get("embedding_configs", {})
+    if body.config_name not in configs:
+        raise HTTPException(status_code=400, detail=f"配置「{body.config_name}」不存在")
+    app.config["default_embedding_config"] = body.config_name
+    from config_manager import save_config
+    save_config(app.config, app.config_file)
+    return {"message": f"✅ 已将默认 Embedding 设为「{body.config_name}」"}
+
+
+@router.put("/config/image/default")
+def set_image_default(body: SetDefaultRequest):
+    app = get_web_app()
+    configs = app.config.get("image_configs", {})
+    if body.config_name not in configs:
+        raise HTTPException(status_code=400, detail=f"配置「{body.config_name}」不存在")
+    app.config["default_image_config"] = body.config_name
+    from config_manager import save_config
+    save_config(app.config, app.config_file)
+    return {"message": f"✅ 已将默认图片配置设为「{body.config_name}」"}
+
+
+# ── 图片连通性测试 ───────────────────────────────────────────────────────────
+
+def _test_image_sync(provider, api_key, base_url, model, size, quality, output_format, progress):
+    progress(0.1, desc="正在准备图片生成测试...")
+    config = normalize_image_config({
+        "provider": provider, "api_key": api_key, "base_url": base_url,
+        "model": model, "size": size, "quality": quality, "output_format": output_format,
+    }, {})
+    progress(0.3, desc="正在调用图片 API...")
+    img_bytes = generate_image_bytes(config, "A solid red square, minimal, flat color")
+    if img_bytes and len(img_bytes) > 100:
+        progress(0.9, desc="测试成功")
+        return f"✅ 图片生成测试成功！返回 {len(img_bytes)} 字节"
+    return "❌ 图片生成测试失败：未获取到有效图片数据"
+
+
+@router.post("/config/image/test")
+async def test_image_config(body: TestImageConfigRequest):
+    return StreamingResponse(
+        run_with_sse(
+            _test_image_sync,
+            body.provider, body.api_key, body.base_url,
+            body.model, body.size, body.quality, body.output_format,
+        ),
+        media_type="text/event-stream",
+    )
+
+
+# ── 默认文风 ─────────────────────────────────────────────────────────────────
+
+@router.get("/config/default-style")
+def get_default_style():
+    app = get_web_app()
+    ds = app.config.get("default_style", {})
+    return {
+        "arch_style": ds.get("arch_style", ""),
+        "bp_style": ds.get("bp_style", ""),
+        "ch_style": ds.get("ch_style", ""),
+        "ch_narrative_style": ds.get("ch_narrative_style", ""),
+    }
+
+
+@router.put("/config/default-style")
+def set_default_style(body: dict):
+    app = get_web_app()
+    ds = app.config.setdefault("default_style", {})
+    for k in ("arch_style", "bp_style", "ch_style", "ch_narrative_style"):
+        if k in body:
+            ds[k] = body[k]
+    from config_manager import save_config
+    save_config(app.config, app.config_file)
+    return {"message": "✅ 已设为全局默认文风", **ds}
 
 
 # ── 指令模板 ─────────────────────────────────────────────────────────────────

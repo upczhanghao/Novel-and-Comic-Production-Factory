@@ -53,10 +53,16 @@ def get_all_prompts():
     prompts = prompt_definitions.get_all_prompts()
     keys = prompt_definitions.PROMPT_KEYS
     display_names = prompt_definitions.PROMPT_DISPLAY_NAMES
+    defaults = prompt_definitions._DEFAULT_PROMPTS
+    meta = {k: prompt_definitions.get_prompt_meta(k) for k in keys}
+    categories = prompt_definitions.PROMPT_CATEGORIES
     return {
         "prompts": prompts,
+        "defaults": defaults,
         "keys": keys,
-        "display_names": display_names
+        "display_names": display_names,
+        "meta": meta,
+        "categories": categories,
     }
 
 

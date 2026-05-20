@@ -197,8 +197,8 @@ def image_file_url(path: str, download: bool = False) -> str:
     return f"/api/images/file?path={quote(path)}&download={'1' if download else '0'}"
 
 
-def image_response_payload(path: str, prompt: str, config_name: str = "") -> dict[str, Any]:
-    return {
+def image_response_payload(path: str, prompt: str, config_name: str = "", config: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "path": path,
         "filename": os.path.basename(path),
         "url": image_file_url(path),
@@ -206,6 +206,11 @@ def image_response_payload(path: str, prompt: str, config_name: str = "") -> dic
         "prompt": prompt,
         "config_name": config_name,
     }
+    if isinstance(config, dict):
+        payload["model"] = config.get("model") or ""
+        payload["size"] = config.get("size") or ""
+        payload["provider"] = config.get("provider") or ""
+    return payload
 
 
 def safe_served_image_path(path: str) -> str:

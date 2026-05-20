@@ -52,6 +52,13 @@ export const configApi = {
   deleteImage: (name: string) => api.delete(`/config/image/${encodeURIComponent(name)}`),
   testLLM: () => `/config/llm/test`,
   testEmbedding: () => `/config/embedding/test`,
+  testImage: () => `/config/image/test`,
+  setLLMDefault: (slot: string, configName: string) =>
+    api.put('/config/llm/default', { slot, config_name: configName }),
+  setEmbeddingDefault: (configName: string) =>
+    api.put('/config/embedding/default', { config_name: configName }),
+  setImageDefault: (configName: string) =>
+    api.put('/config/image/default', { config_name: configName }),
   getProxy: () => api.get('/config/proxy'),
   saveProxy: (data: { proxy_url: string; proxy_port: string; enabled: boolean }) =>
     api.put('/config/proxy', data),
@@ -66,6 +73,8 @@ export const configApi = {
     api.put(`/config/instructions/manju/${encodeURIComponent(key)}`, { content }),
   resetManjuInstruction: (key: string) =>
     api.post(`/config/instructions/manju/${encodeURIComponent(key)}/reset`),
+  getDefaultStyle: () => api.get('/config/default-style'),
+  saveDefaultStyle: (data: Record<string, string>) => api.put('/config/default-style', data),
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────
@@ -185,6 +194,53 @@ export function postSSE(
   return handle
 }
 
+/**
+ * 在 postSSE 之上自动接入全局 TaskBar 与 FeedbackCenter。
+ * 调用方仍可继续传 onProgress / onResult / onError / onDone 做自己的本地处理。
+ */
+export function postSSETracked(
+  url: string,
+  body: Record<string, unknown>,
+  opts: {
+    taskId: string
+    taskLabel: string
+    onProgress?: (msg: string, value?: number, content?: string) => void
+    onResult?: (content: string) => void
+    onError?: (msg: string) => void
+    onDone?: () => void
+    silentError?: boolean
+  },
+): SSEHandle {
+  // 懒加载避免循环依赖
+  const tasksMod = (window as unknown as { __nwTasks?: ReturnType<typeof import('@/stores/tasks').useTasksStore> }).__nwTasks
+  const fbMod = (window as unknown as { __nwFeedback?: ReturnType<typeof import('@/stores/feedback').useFeedbackStore> }).__nwFeedback
+  let handle: SSEHandle | null = null
+  const abort = () => handle?.abort()
+  const task = tasksMod?.register(opts.taskId, opts.taskLabel, abort)
+
+  handle = postSSE(
+    url,
+    body,
+    (msg, value, content) => {
+      if (task && tasksMod) tasksMod.update(opts.taskId, msg, value)
+      opts.onProgress?.(msg, value, content)
+    },
+    (content) => { opts.onResult?.(content) },
+    (msg) => {
+      tasksMod?.finish(opts.taskId, 'error')
+      if (!opts.silentError) fbMod?.error(`${opts.taskLabel} 失败`, msg)
+      opts.onError?.(msg)
+    },
+    () => {
+      if (task && task.status === 'running') {
+        tasksMod?.finish(opts.taskId, 'done')
+      }
+      opts.onDone?.()
+    },
+  )
+  return handle!
+}
+
 export const generateApi = {
   architecture: (body: Record<string, unknown>) => `/generate/architecture`,
   blueprint: (body: Record<string, unknown>) => `/generate/blueprint`,
@@ -266,6 +322,30 @@ export const stylesApi = {
     api.delete(`/styles/${encodeURIComponent(name)}/author-reference`),
   authorRefStatus: (name: string) =>
     api.get(`/styles/${encodeURIComponent(name)}/author-reference/status`),
+  authorRefFiles: (name: string) =>
+    api.get(`/styles/${encodeURIComponent(name)}/author-reference/files`),
+  authorRefStats: (name: string, emb_config_name = '') =>
+    api.get(`/styles/${encodeURIComponent(name)}/author-reference/stats`, {
+      params: { emb_config_name },
+    }),
+  deleteAuthorRefFile: (name: string, fileId: string, emb_config_name = '') =>
+    api.delete(`/styles/${encodeURIComponent(name)}/author-reference/files/${encodeURIComponent(fileId)}`, {
+      params: { emb_config_name },
+    }),
+  updateAuthorRefFile: (name: string, fileId: string, data: { filename?: string; tags?: string[]; author?: string }) =>
+    api.put(`/styles/${encodeURIComponent(name)}/author-reference/files/${encodeURIComponent(fileId)}`, data),
+  replaceAuthorRefFile: (name: string, fileId: string, formData: FormData) =>
+    api.post(`/styles/${encodeURIComponent(name)}/author-reference/files/${encodeURIComponent(fileId)}/replace`, formData, {
+      headers: { 'Content-Type': undefined },
+    }),
+  searchAuthorRef: (name: string, query: string, emb_config_name = '', k = 6, file_id?: string) =>
+    api.get(`/styles/${encodeURIComponent(name)}/author-reference/search`, {
+      params: { query, emb_config_name, k, ...(file_id ? { file_id } : {}) },
+    }),
+  authorRefSource: (name: string, fileId: string) =>
+    api.get(`/styles/${encodeURIComponent(name)}/author-reference/files/${encodeURIComponent(fileId)}/source`),
+  rebuildAuthorRef: (name: string, emb_config_name = '') =>
+    api.post(`/styles/${encodeURIComponent(name)}/author-reference/rebuild`, { emb_config_name }, { timeout: 300000 }),
 }
 
 // ── Knowledge ─────────────────────────────────────────────────────────────────
@@ -276,13 +356,49 @@ export const knowledgeApi = {
     }),
   clear: (filepath: string) =>
     api.delete('/knowledge', { params: { filepath } }),
+  files: (filepath: string) => api.get('/knowledge/files', { params: { filepath } }),
+  stats: (filepath: string, emb_config_name = '') =>
+    api.get('/knowledge/stats', { params: { filepath, emb_config_name } }),
+  deleteFile: (fileId: string, filepath: string, emb_config_name = '') =>
+    api.delete(`/knowledge/files/${encodeURIComponent(fileId)}`, {
+      params: { filepath, emb_config_name },
+    }),
+  updateFile: (fileId: string, filepath: string, data: { filename?: string; tags?: string[]; author?: string }) =>
+    api.put(`/knowledge/files/${encodeURIComponent(fileId)}`, data, { params: { filepath } }),
+  replaceFile: (fileId: string, formData: FormData) =>
+    api.post(`/knowledge/files/${encodeURIComponent(fileId)}/replace`, formData, {
+      headers: { 'Content-Type': undefined },
+    }),
+  search: (filepath: string, query: string, emb_config_name = '', k = 6, file_id?: string) =>
+    api.get('/knowledge/search', {
+      params: { filepath, query, emb_config_name, k, ...(file_id ? { file_id } : {}) },
+    }),
+  source: (fileId: string, filepath: string) =>
+    api.get(`/knowledge/files/${encodeURIComponent(fileId)}/source`, { params: { filepath } }),
+  rebuild: (filepath: string, emb_config_name = '') =>
+    api.post('/knowledge/rebuild', { filepath, emb_config_name }, { timeout: 300000 }),
 }
 
 // ── Files ────────────────────────────────────────────────────────────────────
 export const filesApi = {
   list: (filepath: string) => api.get('/files', { params: { filepath } }),
+  tree: (filepath: string) => api.get('/files/tree', { params: { filepath } }),
+  recent: (filepath: string, limit = 20) =>
+    api.get('/files/recent', { params: { filepath, limit } }),
   content: (filepath: string, path: string) =>
     api.get('/files/content', { params: { filepath, path } }),
+  write: (filepath: string, path: string, content: string) =>
+    api.put('/files/content', { filepath, path, content }),
+  deleteItem: (filepath: string, path: string) =>
+    api.delete('/files/item', { params: { filepath, path } }),
+  batchDelete: (filepath: string, paths: string[]) =>
+    api.post('/files/batch-delete', { filepath, paths }),
+  search: (filepath: string, query: string, caseSensitive = false, limit = 200) =>
+    api.get('/files/search', { params: { filepath, query, case_sensitive: caseSensitive, limit } }),
+  downloadUrl: (filepath: string, path: string) =>
+    `/api/files/download?filepath=${encodeURIComponent(filepath)}&path=${encodeURIComponent(path)}`,
+  archive: (filepath: string, paths?: string[]) =>
+    api.post('/files/archive', { filepath, paths: paths ?? null }, { responseType: 'blob', timeout: 300000 }),
 }
 
 // ── Logs ─────────────────────────────────────────────────────────────────────
@@ -309,6 +425,10 @@ export const imagesApi = {
     api.delete(`/images/prompts/${encodeURIComponent(id)}`, { params: { filepath } }),
   deleteRecord: (id: string, filepath: string, deleteFile = true) =>
     api.delete(`/images/records/${encodeURIComponent(id)}`, { params: { filepath, delete_file: deleteFile } }),
+  batchDeleteRecords: (ids: string[], filepath: string, deleteFile = true) =>
+    api.post('/images/records/batch-delete', { ids, filepath, delete_file: deleteFile }),
+  batchDeletePrompts: (ids: string[], filepath: string) =>
+    api.post('/images/prompts/batch-delete', { ids, filepath }),
 }
 
 // ── Brainstorm ───────────────────────────────────────────────────────────────

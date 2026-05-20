@@ -3,7 +3,16 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { manjuApi, postSSE, type SSEHandle } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
 import { useProjectStore } from '@/stores/project'
+import { useFeedbackStore } from '@/stores/feedback'
+import { useManjuHistory } from '@/composables/useManjuHistory'
 import StreamOutput from '@/components/StreamOutput.vue'
+import ManjuSteps from '@/components/manju/ManjuSteps.vue'
+import PromptTemplatePreview from '@/components/manju/PromptTemplatePreview.vue'
+import EnhanceDiff from '@/components/manju/EnhanceDiff.vue'
+import ContinuityIssues from '@/components/manju/ContinuityIssues.vue'
+import BatchToolbar from '@/components/manju/BatchToolbar.vue'
+import ShotImageInline from '@/components/manju/ShotImageInline.vue'
+import VersionHistory from '@/components/manju/VersionHistory.vue'
 
 type ChapterInfo = {
   num: number
@@ -501,6 +510,211 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
     selectedImageConfig.value = choices[0]
   }
 })
+
+// ── 增量功能：步骤导航 / 批量选择 / 增强对比 / 版本历史 ─────────────────────
+const feedback = useFeedbackStore()
+const history = useManjuHistory()
+
+const stepAnchors: Record<string, string> = {
+  import: 'manju-import', script: 'manju-script', characters: 'manju-characters',
+  scenes: 'manju-scenes', storyboards: 'manju-storyboards', images: 'manju-storyboards',
+  export: 'manju-export',
+}
+
+function gotoStep(key: string) {
+  const id = stepAnchors[key]
+  if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const hasImages = computed(() => storyboardShots.value.some((s) => s.image_url || s.image_path))
+
+// 选择
+const selectedCharIds = ref<string[]>([])
+const selectedShotIds = ref<string[]>([])
+
+function toggleCharSel(id: string) {
+  const i = selectedCharIds.value.indexOf(id)
+  if (i >= 0) selectedCharIds.value.splice(i, 1)
+  else selectedCharIds.value.push(id)
+}
+function toggleShotSel(id: string) {
+  const i = selectedShotIds.value.indexOf(id)
+  if (i >= 0) selectedShotIds.value.splice(i, 1)
+  else selectedShotIds.value.push(id)
+}
+
+async function bulkCharLock(lock: boolean) {
+  let n = 0
+  for (const c of characterCards.value) {
+    if (selectedCharIds.value.includes(c.id)) { c.locked = lock; n++ }
+  }
+  await saveCharacterCards()
+  feedback.success(`已${lock ? '锁定' : '解锁'} ${n} 个角色`)
+}
+async function bulkCharDelete() {
+  if (!confirm(`删除 ${selectedCharIds.value.length} 个角色？`)) return
+  const before = JSON.parse(JSON.stringify(characterCards.value))
+  characterCards.value = characterCards.value.filter((c) => !selectedCharIds.value.includes(c.id))
+  await saveCharacterCards()
+  feedback.success('已删除', { undoFn: async () => { characterCards.value = before; await saveCharacterCards() } })
+  selectedCharIds.value = []
+}
+
+async function bulkShotLock(lock: boolean) {
+  let n = 0
+  for (const s of storyboardShots.value) {
+    if (selectedShotIds.value.includes(s.id)) { s.locked = lock; n++ }
+  }
+  await saveStoryboardShots()
+  feedback.success(`已${lock ? '锁定' : '解锁'} ${n} 个分镜`)
+}
+async function bulkShotDelete() {
+  if (!confirm(`删除 ${selectedShotIds.value.length} 个分镜？`)) return
+  const before = JSON.parse(JSON.stringify(storyboardShots.value))
+  storyboardShots.value = storyboardShots.value.filter((s) => !selectedShotIds.value.includes(s.id))
+  await saveStoryboardShots()
+  feedback.success('已删除', { undoFn: async () => { storyboardShots.value = before; await saveStoryboardShots() } })
+  selectedShotIds.value = []
+}
+async function bulkShotRegenerate() {
+  let ok = 0
+  for (const s of storyboardShots.value) {
+    if (selectedShotIds.value.includes(s.id) && !s.locked) {
+      try { await regenerateShot(s); ok++ } catch { /* ignore */ }
+    }
+  }
+  feedback.success(`已重生成 ${ok} 个分镜`)
+}
+async function bulkShotImportToQueue() {
+  try {
+    const res = await manjuApi.importImagePrompts({
+      filepath: filepath.value, kind: 'storyboards', replace: false,
+      shot_ids: selectedShotIds.value,
+    })
+    feedback.success(res.data.message ?? '已导入图片队列')
+  } catch (e) {
+    feedback.error('导入图片队列失败', (e as Error).message)
+  }
+}
+
+// 增强对比
+interface PromptPair { id: string; label: string; before: string; after: string }
+const enhanceDiff = ref<PromptPair[]>([])
+const enhanceBefore = ref<{ characters: CharacterCard[]; storyboards: StoryboardShot[] } | null>(null)
+
+async function enhancePromptsWithDiff(kind = 'all') {
+  enhancingPrompts.value = true
+  enhanceBefore.value = {
+    characters: JSON.parse(JSON.stringify(characterCards.value)),
+    storyboards: JSON.parse(JSON.stringify(storyboardShots.value)),
+  }
+  dataMsg.value = '正在增强生图提示词...'
+  try {
+    const res = await manjuApi.enhancePrompts({ filepath: filepath.value, kind, overwrite_locked: false })
+    const newChars = (res.data.characters ?? characterCards.value) as CharacterCard[]
+    const newShots = (res.data.storyboards ?? storyboardShots.value) as StoryboardShot[]
+    const pairs: PromptPair[] = []
+    if (kind !== 'storyboards') {
+      for (const before of enhanceBefore.value.characters) {
+        const after = newChars.find((c) => c.id === before.id)
+        if (after) pairs.push({ id: `c:${before.id}`, label: `角色 · ${before.name}`, before: String(before.prompt_positive || ''), after: String(after.prompt_positive || '') })
+      }
+    }
+    if (kind !== 'characters') {
+      for (const before of enhanceBefore.value.storyboards) {
+        const after = newShots.find((s) => s.id === before.id)
+        if (after) pairs.push({ id: `s:${before.id}`, label: `分镜 · 第${before.chapter_num}章·镜${before.shot_no}`, before: String(before.prompt_positive || ''), after: String(after.prompt_positive || '') })
+      }
+    }
+    enhanceDiff.value = pairs.filter((p) => p.before !== p.after)
+    characterCards.value = newChars
+    storyboardShots.value = newShots
+    dataMsg.value = res.data.message
+    feedback.success(`增强完成：${enhanceDiff.value.length} 条变化，可逐条选择应用`)
+  } catch (e) {
+    feedback.error('提示词增强失败', (e as Error).message)
+  } finally {
+    enhancingPrompts.value = false
+  }
+}
+
+function revertOne(id: string) {
+  if (!enhanceBefore.value) return
+  if (id.startsWith('c:')) {
+    const before = enhanceBefore.value.characters.find((c) => `c:${c.id}` === id)
+    const idx = characterCards.value.findIndex((c) => `c:${c.id}` === id)
+    if (before && idx >= 0) characterCards.value[idx] = JSON.parse(JSON.stringify(before))
+  } else {
+    const before = enhanceBefore.value.storyboards.find((s) => `s:${s.id}` === id)
+    const idx = storyboardShots.value.findIndex((s) => `s:${s.id}` === id)
+    if (before && idx >= 0) storyboardShots.value[idx] = JSON.parse(JSON.stringify(before))
+  }
+  enhanceDiff.value = enhanceDiff.value.filter((p) => p.id !== id)
+}
+
+async function revertAllEnhance() {
+  if (!enhanceBefore.value) return
+  characterCards.value = enhanceBefore.value.characters
+  storyboardShots.value = enhanceBefore.value.storyboards
+  enhanceDiff.value = []
+  await saveCharacterCards(); await saveStoryboardShots()
+  feedback.info('已全部还原')
+}
+
+async function applyAllEnhance() {
+  await saveCharacterCards(); await saveStoryboardShots()
+  enhanceDiff.value = []
+  feedback.success('增强结果已全部应用并保存')
+}
+
+function applyOne(id: string) {
+  enhanceDiff.value = enhanceDiff.value.filter((p) => p.id !== id)
+  // characters/storyboards already mutated; save to persist
+  if (id.startsWith('c:')) saveCharacterCards()
+  else saveStoryboardShots()
+}
+
+// 跳转到分镜
+function jumpToShot(shotId: string) {
+  const el = document.getElementById(`shot-${shotId}`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('shot-highlight')
+    setTimeout(() => el.classList.remove('shot-highlight'), 2000)
+  }
+}
+
+// 历史快照
+const scriptHistory = history.list('script')
+const charactersHistory = history.list('characters')
+const storyboardsHistory = history.list('storyboards')
+const scenesHistory = history.list('scenes')
+
+function snapshotScript() { if (scriptAdapt.value.result) history.snapshot('script', scriptAdapt.value.result) }
+function snapshotCharacters() { if (characterCards.value.length) history.snapshot('characters', JSON.parse(JSON.stringify(characterCards.value))) }
+function snapshotStoryboards() { if (storyboardShots.value.length) history.snapshot('storyboards', JSON.parse(JSON.stringify(storyboardShots.value))) }
+function snapshotScenes() { if (scenes.value.result) history.snapshot('scenes', scenes.value.result) }
+
+async function restoreSnap(kind: 'script' | 'characters' | 'storyboards' | 'scenes', snap: { payload: unknown }) {
+  if (kind === 'script' && typeof snap.payload === 'string') { scriptAdapt.value.result = snap.payload; feedback.success('剧本已回滚') }
+  else if (kind === 'characters' && Array.isArray(snap.payload)) { characterCards.value = snap.payload as CharacterCard[]; await saveCharacterCards(); feedback.success('角色已回滚') }
+  else if (kind === 'storyboards' && Array.isArray(snap.payload)) { storyboardShots.value = snap.payload as StoryboardShot[]; await saveStoryboardShots(); feedback.success('分镜已回滚') }
+  else if (kind === 'scenes' && typeof snap.payload === 'string') { scenes.value.result = snap.payload; feedback.success('场景已回滚') }
+}
+
+// 在每次成功保存/生成结束后自动入栈
+watch(() => scriptAdapt.value.running, (running, prev) => {
+  if (prev && !running && scriptAdapt.value.result && !scriptAdapt.value.error) snapshotScript()
+})
+watch(() => scenes.value.running, (running, prev) => {
+  if (prev && !running && scenes.value.result && !scenes.value.error) snapshotScenes()
+})
+watch(() => storyboards.value.running, (running, prev) => {
+  if (prev && !running && storyboardShots.value.length && !storyboards.value.error) snapshotStoryboards()
+})
+watch(() => characters.value.running, (running, prev) => {
+  if (prev && !running && characterCards.value.length && !characters.value.error) snapshotCharacters()
+})
 </script>
 
 <template>
@@ -520,7 +734,17 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
       </button>
     </div>
 
-    <section class="module-panel p-4">
+    <ManjuSteps
+      :has-import="chapters.length > 0"
+      :has-script="Boolean(scriptAdapt.result)"
+      :has-characters="characterCards.length > 0"
+      :has-scenes="Boolean(scenes.result)"
+      :has-storyboards="storyboardShots.length > 0"
+      :has-images="hasImages"
+      @goto="gotoStep"
+    />
+
+    <section class="module-panel p-4" id="manju-import">
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
         <div
           v-for="(step, idx) in pipelineSteps"
@@ -659,7 +883,7 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
       </aside>
 
       <main class="space-y-5">
-        <section class="module-panel space-y-4 overflow-hidden">
+        <section class="module-panel space-y-4 overflow-hidden" id="manju-script">
           <div class="module-panel-header">
             <div>
               <h3 class="module-panel-title">小说改编漫剧剧本</h3>
@@ -724,11 +948,12 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
           </div>
         </section>
 
-        <section class="module-panel space-y-3 overflow-hidden">
+        <section class="module-panel space-y-3 overflow-hidden" id="manju-characters">
           <div class="module-panel-header">
             <div>
               <h3 class="module-panel-title">角色信息与角色卡提示词</h3>
               <p class="module-panel-caption">沉淀角色设定与单张全身角色图提示词。</p>
+              <PromptTemplatePreview kind="character" :visual-style="visualStyle" :extra-guidance="extraGuidance" />
             </div>
             <div class="module-action-row">
               <button @click="exportPromptContent('characters', 'md')" :disabled="!characters.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
@@ -750,11 +975,12 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
           </div>
         </section>
 
-        <section class="module-panel space-y-3 overflow-hidden">
+        <section class="module-panel space-y-3 overflow-hidden" id="manju-scenes">
           <div class="module-panel-header">
             <div>
               <h3 class="module-panel-title">章节场景图提示词</h3>
               <p class="module-panel-caption">为章节主场景生成稳定的环境、氛围和构图描述。</p>
+              <PromptTemplatePreview kind="scene" :visual-style="visualStyle" :extra-guidance="extraGuidance" />
             </div>
             <div class="module-action-row">
               <button @click="exportPromptContent('scenes', 'md')" :disabled="!scenes.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
@@ -776,11 +1002,12 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
           </div>
         </section>
 
-        <section class="module-panel space-y-3 overflow-hidden">
+        <section class="module-panel space-y-3 overflow-hidden" id="manju-storyboards">
           <div class="module-panel-header">
             <div>
               <h3 class="module-panel-title">章节分镜图提示词</h3>
               <p class="module-panel-caption">按镜头拆解主体、景别、动作和连续性。</p>
+              <PromptTemplatePreview kind="storyboard" :visual-style="visualStyle" :extra-guidance="extraGuidance" />
             </div>
             <div class="module-action-row">
               <button @click="exportPromptContent('storyboards', 'md')" :disabled="!storyboards.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
@@ -814,15 +1041,24 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
               <button @click="loadStats" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">出场统计</button>
               <button @click="createQueue" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm" type="button">创建批量队列</button>
               <button
-                @click="enhancePrompts('all')"
+                @click="enhancePromptsWithDiff('all')"
                 :disabled="enhancingPrompts || (!characterCards.length && !storyboardShots.length)"
                 class="px-3 py-2 rounded-md border border-[var(--color-leather)] text-[var(--color-leather)] text-sm disabled:opacity-50"
                 type="button"
               >
-                {{ enhancingPrompts ? '增强中...' : '增强全部提示词' }}
+                {{ enhancingPrompts ? '增强中...' : '增强全部提示词（对比模式）' }}
               </button>
             </div>
           </div>
+
+          <EnhanceDiff
+            v-if="enhanceDiff.length"
+            :pairs="enhanceDiff"
+            @apply="applyOne"
+            @revert="revertOne"
+            @apply-all="applyAllEnhance"
+            @revert-all="revertAllEnhance"
+          />
           <div
             v-if="dataMsg"
             class="mx-4 text-sm module-status"
@@ -836,8 +1072,8 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
             <button @click="exportAssets('storyboards', 'csv')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">分镜 CSV</button>
             <button @click="exportAssets('storyboards', 'xlsx')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">分镜 Excel</button>
             <button @click="exportAssets('all', 'json')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">全部 JSON</button>
-            <button @click="enhancePrompts('characters')" :disabled="enhancingPrompts || !characterCards.length" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">增强角色提示词</button>
-            <button @click="enhancePrompts('storyboards')" :disabled="enhancingPrompts || !storyboardShots.length" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">增强分镜提示词</button>
+            <button @click="enhancePromptsWithDiff('characters')" :disabled="enhancingPrompts || !characterCards.length" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">增强角色提示词</button>
+            <button @click="enhancePromptsWithDiff('storyboards')" :disabled="enhancingPrompts || !storyboardShots.length" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">增强分镜提示词</button>
             <button @click="importImagePrompts('all')" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">全部导入生图</button>
           </div>
 
@@ -846,10 +1082,21 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
               <h4 class="text-sm font-semibold text-[var(--color-ink)]">角色一致性锁定</h4>
               <button @click="saveCharacterCards" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">保存角色锁定</button>
             </div>
+            <BatchToolbar
+              :total="characterCards.length"
+              :selected="selectedCharIds"
+              @select-all="selectedCharIds = characterCards.map(c => c.id)"
+              @clear="selectedCharIds = []"
+              @lock="bulkCharLock(true)"
+              @unlock="bulkCharLock(false)"
+              @delete="bulkCharDelete"
+            />
+            <VersionHistory kind="characters" label="角色" :list="charactersHistory" @restore="snap => restoreSnap('characters', snap)" @remove="ts => history.remove('characters', ts)" />
             <div class="data-table-shell max-h-96">
-              <table class="min-w-[980px] w-full text-xs">
+              <table class="min-w-[1020px] w-full text-xs">
                 <thead class="bg-[var(--color-parchment)] sticky top-0">
                   <tr>
+                    <th class="p-2 text-left w-10"><input type="checkbox" :checked="selectedCharIds.length === characterCards.length && characterCards.length > 0" @change="selectedCharIds = ($event.target as HTMLInputElement).checked ? characterCards.map(c => c.id) : []" /></th>
                     <th class="p-2 text-left w-16">锁定</th>
                     <th class="p-2 text-left w-28">角色</th>
                     <th class="p-2 text-left w-36">身份</th>
@@ -860,6 +1107,7 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
                 </thead>
                 <tbody>
                   <tr v-for="card in characterCards" :key="card.id" class="border-t border-[var(--color-parchment)] align-top">
+                    <td class="p-2"><input type="checkbox" :checked="selectedCharIds.includes(card.id)" @change="toggleCharSel(card.id)" /></td>
                     <td class="p-2"><input v-model="card.locked" type="checkbox" /></td>
                     <td class="p-2"><input v-model="card.name" class="w-full border rounded px-2 py-1" /></td>
                     <td class="p-2"><textarea v-model="card.identity" rows="3" class="w-full border rounded px-2 py-1 resize-y" /></td>
@@ -872,7 +1120,7 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
                       </div>
                     </td>
                   </tr>
-                  <tr v-if="!characterCards.length"><td colspan="6" class="p-3 text-[var(--color-ink-light)]">暂无结构化角色卡，生成角色卡后点击刷新数据。</td></tr>
+                  <tr v-if="!characterCards.length"><td colspan="7" class="p-3 text-[var(--color-ink-light)]">暂无结构化角色卡，生成角色卡后点击刷新数据。</td></tr>
                 </tbody>
               </table>
             </div>
@@ -883,10 +1131,25 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
               <h4 class="text-sm font-semibold text-[var(--color-ink)]">分镜表格编辑器</h4>
               <button @click="saveStoryboardShots" class="px-3 py-1.5 rounded border border-[var(--color-parchment-darker)] text-sm" type="button">保存分镜表</button>
             </div>
+            <BatchToolbar
+              :total="storyboardShots.length"
+              :selected="selectedShotIds"
+              :show-regenerate="true"
+              :show-queue-import="true"
+              @select-all="selectedShotIds = storyboardShots.map(s => s.id)"
+              @clear="selectedShotIds = []"
+              @lock="bulkShotLock(true)"
+              @unlock="bulkShotLock(false)"
+              @delete="bulkShotDelete"
+              @regenerate="bulkShotRegenerate"
+              @queue-import="bulkShotImportToQueue"
+            />
+            <VersionHistory kind="storyboards" label="分镜" :list="storyboardsHistory" @restore="snap => restoreSnap('storyboards', snap)" @remove="ts => history.remove('storyboards', ts)" />
             <div class="data-table-shell max-h-[520px]">
-              <table class="min-w-[1180px] w-full text-xs">
+              <table class="min-w-[1220px] w-full text-xs">
                 <thead class="bg-[var(--color-parchment)] sticky top-0">
                   <tr>
+                    <th class="p-2 text-left w-10"><input type="checkbox" :checked="selectedShotIds.length === storyboardShots.length && storyboardShots.length > 0" @change="selectedShotIds = ($event.target as HTMLInputElement).checked ? storyboardShots.map(s => s.id) : []" /></th>
                     <th class="p-2 text-left w-16">锁定</th>
                     <th class="p-2 text-left w-20">章节</th>
                     <th class="p-2 text-left w-16">镜号</th>
@@ -899,7 +1162,8 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="shot in storyboardShots" :key="shot.id" class="border-t border-[var(--color-parchment)] align-top">
+                  <tr v-for="shot in storyboardShots" :key="shot.id" :id="`shot-${shot.id}`" class="border-t border-[var(--color-parchment)] align-top">
+                    <td class="p-2"><input type="checkbox" :checked="selectedShotIds.includes(shot.id)" @change="toggleShotSel(shot.id)" /></td>
                     <td class="p-2"><input v-model="shot.locked" type="checkbox" /></td>
                     <td class="p-2">第{{ shot.chapter_num }}章</td>
                     <td class="p-2">{{ shot.shot_no }}</td>
@@ -925,7 +1189,7 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
                       </div>
                     </td>
                   </tr>
-                  <tr v-if="!storyboardShots.length"><td colspan="9" class="p-3 text-[var(--color-ink-light)]">暂无结构化分镜，生成分镜后点击刷新数据。</td></tr>
+                  <tr v-if="!storyboardShots.length"><td colspan="10" class="p-3 text-[var(--color-ink-light)]">暂无结构化分镜，生成分镜后点击刷新数据。</td></tr>
                 </tbody>
               </table>
             </div>
@@ -951,12 +1215,11 @@ watch(() => configStore.imageChoices.slice(), (choices) => {
 
             <div class="module-status">
               <h4 class="text-sm font-semibold text-[var(--color-ink)] mb-2">检查/统计/队列</h4>
-              <div class="max-h-52 overflow-auto text-xs space-y-1">
-                <div v-for="issue in continuityIssues" :key="String(issue.shot_id) + String(issue.message)" class="border-b border-[var(--color-parchment)] py-1">
-                  {{ issue.level }} · {{ issue.shot_id }} · {{ issue.message }}
-                </div>
-                <div v-if="!continuityIssues.length" class="text-[var(--color-ink-light)]">暂无连续性检查结果。</div>
-              </div>
+              <ContinuityIssues
+                :issues="continuityIssues"
+                :shots="storyboardShots"
+                @jump-shot="jumpToShot"
+              />
               <div class="mt-3 grid grid-cols-2 gap-3 text-xs">
                 <div>
                   <div class="font-semibold mb-1">角色出场</div>

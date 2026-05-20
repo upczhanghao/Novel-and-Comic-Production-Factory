@@ -72,6 +72,25 @@ class TestEmbeddingConfigRequest(BaseModel):
     model_name: str = ""
 
 
+class TestImageConfigRequest(BaseModel):
+    provider: str = "openai"
+    api_key: str = ""
+    base_url: str = "https://api.openai.com/v1"
+    model: str = "gpt-image-1"
+    size: str = "1024x1024"
+    quality: str = "low"
+    output_format: str = "png"
+
+
+class SetLLMDefaultRequest(BaseModel):
+    slot: str
+    config_name: str
+
+
+class SetDefaultRequest(BaseModel):
+    config_name: str
+
+
 # ── 项目 ──────────────────────────────────────────────────────────────────────
 
 class ProjectCreate(BaseModel):
