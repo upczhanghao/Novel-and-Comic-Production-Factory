@@ -3,6 +3,30 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.4] - 2026-05-22
+
+### Added — 公网部署安全防护
+
+为支持把 Storia 部署到带公网 IP 的服务器上自用，本版本增加最小集合的安全基线：
+
+- **滑动窗口限流**（`api/rate_limit.py`）：按桶 + 按 IP 的 60s 滑动窗口。默认两个桶：`generate`（LLM/Embedding/图片/知识库导入等高成本端点，10 次/分钟）和 `default`（其他 `/api/*`，60 次/分钟）。命中阈值返回 `429 Too Many Requests` + `Retry-After: 60`。配置落盘 `rate_limits.json`，可热更，无需重启。
+- **限流可视化与编辑页**（`frontend/src/views/SecurityView.vue`，路由 `/security`）：每 3s 轮询展示每桶近 60s 命中/拒绝、累计、Top 客户端及其分桶明细；阈值直接在表格内改、保存即生效。
+- **限流管理接口**：`GET /api/security/rate-limits`（配置 + 实时统计）/ `PUT /api/security/rate-limits`（部分字段热更）。该接口自身在豁免列表中，不会被自己限。
+- **客户端 IP 识别**：优先取 `X-Forwarded-For` 首跳，兼容 Cloudflare / nginx 反代。
+- **未捕获异常脱敏**：全局 `Exception` 处理器只回 `{"detail":"服务器内部错误，请稍后再试"}` + 500，详情记入 `app.log`，避免堆栈/路径外泄。`HTTPException` 仍按开发者写的 `detail` 返回。
+- **`/api/health` 去 version**：只返回 `{"status":"ok"}`，降低扫描器指纹。
+- **部署手册** `docs/DEPLOY-PUBLIC.md`：覆盖威胁模型、Cloudflare Tunnel + Access 首选方案、nginx + Token 备用方案、LLM 厂商账户硬限额、紧急处置。
+
+### Notes
+- 限流状态在内存里，单进程 uvicorn 部署足够。多副本/多用户场景需要先改造成 Redis backend，不在本版本范围内。
+- 限流可通过 UI 一键 `enabled: false` 临时熔断，但仅熔断本进程；已发出的 LLM 请求不可撤回 —— 务必在厂商后台配预算硬限。
+
+### Files
+- 新增：`api/rate_limit.py`、`api/routers/security.py`、`frontend/src/views/SecurityView.vue`、`docs/DEPLOY-PUBLIC.md`
+- 修改：`api_server.py`、`frontend/src/api/client.ts`、`frontend/src/router/index.ts`
+
+---
+
 ## [2.4.3] - 2026-05-22
 
 ### Changed — 品牌重命名 `NovelWriter` → `Storia`

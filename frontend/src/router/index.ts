@@ -92,6 +92,12 @@ export const navRoutes: RouteRecordRaw[] = [
     meta: { title: '一致性检查', icon: 'check', group: 'system', level: 'advanced' },
   },
   {
+    path: '/security',
+    name: 'security',
+    component: () => import('@/views/SecurityView.vue'),
+    meta: { title: '安全与限流', icon: 'check', group: 'system', level: 'advanced', requiresProject: false },
+  },
+  {
     path: '/files',
     name: 'files',
     component: () => import('@/views/FilesView.vue'),

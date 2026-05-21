@@ -37,3 +37,4 @@ xp_presets.json
 .vscode/
 *.swp
 *.tmp
+rate_limits.json

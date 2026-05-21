@@ -486,3 +486,9 @@ export const manjuApi = {
   historyClear: (filepath: string, kind: string) =>
     api.delete(`/manju/history/${encodeURIComponent(kind)}`, { params: { filepath } }),
 }
+
+// ── Security (rate limits) ───────────────────────────────────────────────────
+export const securityApi = {
+  getRateLimits: () => api.get('/security/rate-limits'),
+  updateRateLimits: (data: Record<string, unknown>) => api.put('/security/rate-limits', data),
+}

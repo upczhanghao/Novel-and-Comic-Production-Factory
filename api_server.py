@@ -18,8 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.security import default_cors_origins
+from api.rate_limit import get_limiter
 
-__version__ = "2.4.3"
+__version__ = "2.4.4"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +30,8 @@ logging.basicConfig(
         logging.StreamHandler(),
     ],
 )
+
+_logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Storia API",
@@ -81,12 +84,44 @@ async def security_headers_and_optional_api_token(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     return response
 
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """滑动窗口限流。仅作用于 /api/*，OPTIONS 预检直接放行。"""
+    path = request.url.path
+    if request.method == "OPTIONS" or not path.startswith("/api"):
+        return await call_next(request)
+    # 取首跳 IP，兼容 Cloudflare / nginx 反代
+    fwd = request.headers.get("X-Forwarded-For", "")
+    if fwd:
+        client_id = fwd.split(",")[0].strip()
+    else:
+        client_id = request.client.host if request.client else "unknown"
+    allowed, info = get_limiter().check_and_record(path, client_id)
+    if not allowed:
+        retry = (info or {}).get("retry_after", 60)
+        return JSONResponse(
+            {"detail": "请求过于频繁，请稍后再试"},
+            status_code=429,
+            headers={"Retry-After": str(retry)},
+        )
+    return await call_next(request)
+
+# ── 全局异常脱敏 ──────────────────────────────────────────────────────────────
+# HTTPException 信任开发者写的 detail，原样返回；未捕获异常只返回通用提示，详情落日志。
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    _logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse({"detail": "服务器内部错误，请稍后再试"}, status_code=500)
+
+
 # ── 挂载路由 ─────────────────────────────────────────────────────────────────
 
 from api.routers import (
     projects, config, presets, generate,
     styles, knowledge, files, logs, consistency, xp_presets,
-    brainstorm, manju, images,
+    brainstorm, manju, images, security,
 )
 
 app.include_router(projects.router, prefix="/api")
@@ -102,12 +137,13 @@ app.include_router(xp_presets.router, prefix="/api")
 app.include_router(brainstorm.router, prefix="/api")
 app.include_router(manju.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
+app.include_router(security.router, prefix="/api")
 
 # ── 健康检查 ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": __version__}
+    return {"status": "ok"}
 
 
 # ── 生产模式：serve Vue 构建产物 ───────────────────────────────────────────────
