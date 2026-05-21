@@ -3,6 +3,35 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.3] - 2026-05-22
+
+### Changed — 品牌重命名 `NovelWriter` → `Storia`
+
+项目最初定位为"AI 小说生成器"，经过 v2.2–v2.4 系列扩展后已覆盖小说、漫剧、图片三类生产场景，原品牌名 `NovelWriter` 与副标 `AI Production Studio` 已无法准确反映项目范围。本版统一改名为 **Storia**（意为"故事"），副标改为「小说 · 漫剧 · 图片一站式生产」。
+
+**用户可见层（已替换）**：
+- 前端侧栏品牌区：logo `N` → `S`，标题 `NovelWriter` → `Storia`，副标 `AI Production Studio` → `小说 · 漫剧 · 图片一站式生产`（`frontend/src/App.vue`）
+- 浏览器标签页标题：`frontend/index.html` + `frontend/src/router/index.ts`
+- 引导向导欢迎语：`frontend/src/components/OnboardingWizard.vue`
+- FastAPI OpenAPI 文档：`title: "Storia API"`（`api_server.py`）
+- README 标题与说明：`README.md`
+- Agent system prompt 与 tool schema 描述：`agent_config.py` / `agent_tools.py`
+
+**协议层（保留旧命名）**：
+- HTTP header：`X-NovelWriter-Token`
+- 环境变量：`NOVELWRITER_API_TOKEN`、`NOVELWRITER_CORS_ORIGINS`
+
+这些是部署侧"内部协议名"，改它们会破坏现有 `.env` 与反向代理配置。README 顶部新增"关于命名"段做了说明。
+
+**仓库名**：`Novel-and-Comic-Production-Factory` 保持不变——它本身已经准确描述功能范围，等于充当 Storia 的副标。
+
+### Files
+- 前端：`frontend/src/App.vue`、`frontend/index.html`、`frontend/src/router/index.ts`、`frontend/src/components/OnboardingWizard.vue`、`frontend/src/views/LogsView.vue`
+- 后端：`api_server.py`、`agent_config.py`、`agent_tools.py`
+- 文档：`README.md`
+
+---
+
 ## [2.4.2] - 2026-05-22
 
 ### Performance — 后端性能优化（5 项）

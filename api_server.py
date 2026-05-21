@@ -1,7 +1,7 @@
 # api_server.py
 # -*- coding: utf-8 -*-
 """
-NovelWriter FastAPI 后端入口
+Storia FastAPI 后端入口
 替代 web_server.py（Gradio）
 
 启动命令：
@@ -19,7 +19,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.security import default_cors_origins
 
-__version__ = "2.4.2"
+__version__ = "2.4.3"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,8 +31,8 @@ logging.basicConfig(
 )
 
 app = FastAPI(
-    title="NovelWriter API",
-    description="AI 小说生成器 REST + SSE API",
+    title="Storia API",
+    description="小说 · 漫剧 · 图片一站式生产 REST + SSE API",
     version=__version__,
 )
 

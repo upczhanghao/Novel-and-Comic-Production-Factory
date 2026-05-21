@@ -99,7 +99,7 @@ function goConfig() {
         <header class="onb-header">
           <div>
             <div class="onb-kicker">首次设置</div>
-            <h2>欢迎使用 NovelWriter</h2>
+            <h2>欢迎使用 Storia</h2>
             <p>三步完成基础配置，进入工作台</p>
           </div>
           <button class="onb-skip" @click="skip" type="button">跳过</button>

@@ -1,6 +1,8 @@
-# Novel and Comic Production Factory
+# Storia — Novel and Comic Production Factory
 
 一个面向小说创作、漫剧制作和 AI 图片生成的本地化创作工作台。项目当前采用 **Vue 3 + TypeScript + Vite** 前端、**FastAPI + SSE** 后端，生产模式由 FastAPI 直接托管前端构建产物，支持本地一键脚本启动和 Docker Compose 部署。
+
+> **关于命名**：项目品牌名为 **Storia**（意为"故事"）。仓库名 `Novel-and-Comic-Production-Factory` 描述功能范围，HTTP header（`X-NovelWriter-Token`）与环境变量（`NOVELWRITER_API_TOKEN` / `NOVELWRITER_CORS_ORIGINS`）出于向后兼容保留早期命名，不影响使用。
 
 ## 核心功能
 

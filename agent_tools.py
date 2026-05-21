@@ -1,8 +1,8 @@
 # agent_tools.py
 # -*- coding: utf-8 -*-
 """
-NovelWriter Agent Tool Schema 定义
-将 NovelWriter 的核心 API 封装为 LLM function calling / tool use 的工具定义。
+Storia Agent Tool Schema 定义
+将 Storia 的核心 API 封装为 LLM function calling / tool use 的工具定义。
 支持 OpenAI、Claude、Gemini 等主流 LLM 的 tool use 格式。
 """
 
@@ -501,7 +501,7 @@ TOOL_CATEGORIES = {
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 工具执行器：通过 HTTP 调用 NovelWriter API
+# 工具执行器：通过 HTTP 调用 Storia API
 # ═══════════════════════════════════════════════════════════════════════════════
 
 import requests
@@ -514,14 +514,14 @@ _logger = logging.getLogger(__name__)
 
 class ToolExecutor:
     """
-    工具执行器：根据工具名和参数，调用 NovelWriter API 并返回结果。
+    工具执行器：根据工具名和参数，调用 Storia API 并返回结果。
     支持普通 JSON 接口和 SSE 流式接口。
     """
 
     def __init__(self, api_base: str = "http://localhost:7860/api", default_params: dict = None):
         """
         Args:
-            api_base: NovelWriter API 基础地址
+            api_base: Storia API 基础地址
             default_params: 默认参数（如 llm_config_name, filepath 等），工具调用时自动补全
         """
         self.api_base = api_base.rstrip("/")

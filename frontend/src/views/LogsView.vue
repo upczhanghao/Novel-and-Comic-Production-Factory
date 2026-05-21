@@ -42,7 +42,7 @@ function deriveHint(text: string): string {
   if (t.includes('401') || t.includes('unauthorized') || t.includes('invalid api key') || t.includes('incorrect api key'))
     return 'API Key 无效：请在「模型配置」重新填写正确的 API Key 并测试连通性。'
   if (t.includes('403') || t.includes('forbidden'))
-    return '权限被拒：检查 API Key 的可用区域/项目，或后端 NovelWriter Token 是否匹配。'
+    return '权限被拒：检查 API Key 的可用区域/项目，或后端 API Token 是否匹配。'
   if (t.includes('429') || t.includes('rate limit') || t.includes('quota'))
     return '调用频率/额度超限：稍后重试，或降低并发数（参数面板中的「批量并发数」）。'
   if (t.includes('5') && (t.includes('500') || t.includes('502') || t.includes('503') || t.includes('504')))

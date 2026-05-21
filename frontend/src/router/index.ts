@@ -117,7 +117,7 @@ const router = createRouter({
 })
 
 router.afterEach((to) => {
-  document.title = `${to.meta.title ?? 'NovelWriter'} — NovelWriter`
+  document.title = `${to.meta.title ?? 'Storia'} — Storia`
 })
 
 // A11: 项目守卫 — 路由 meta.requiresProject !== false 时要求 hasActiveProject

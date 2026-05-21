@@ -67,10 +67,10 @@ function openSearch() {
   <div class="studio-shell">
     <aside class="studio-sidebar">
       <div class="brand-block">
-        <div class="brand-mark">N</div>
+        <div class="brand-mark">S</div>
         <div class="min-w-0">
-          <h1>NovelWriter</h1>
-          <p>AI Production Studio</p>
+          <h1>Storia</h1>
+          <p>小说 · 漫剧 · 图片一站式生产</p>
         </div>
       </div>
 
@@ -111,10 +111,10 @@ function openSearch() {
 
     <div class="studio-workspace">
       <header class="mobile-topbar">
-        <div class="brand-mark small">N</div>
+        <div class="brand-mark small">S</div>
         <div class="min-w-0">
           <div class="text-sm font-semibold text-[var(--color-ink)] truncate">{{ currentNav.label }}</div>
-          <div class="text-[10px] uppercase tracking-[0.18em] text-[var(--color-ink-light)]">NovelWriter</div>
+          <div class="text-[10px] uppercase tracking-[0.18em] text-[var(--color-ink-light)]">Storia</div>
         </div>
         <button class="mobile-search-btn" @click="openSearch" type="button" aria-label="搜索">
           <AppIcon name="search" size="18" />
