@@ -65,6 +65,9 @@ defineProps<{
     <template v-else-if="name === 'close'">
       <path d="M18 6 6 18" /><path d="m6 6 12 12" />
     </template>
+    <template v-else-if="name === 'search'">
+      <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+    </template>
     <template v-else>
       <circle cx="12" cy="12" r="9" /><path d="M12 8v8" /><path d="M8 12h8" />
     </template>

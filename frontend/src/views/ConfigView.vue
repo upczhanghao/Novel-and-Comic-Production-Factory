@@ -7,6 +7,7 @@ import LLMConfigPanel from '@/components/config/LLMConfigPanel.vue'
 import EmbeddingConfigPanel from '@/components/config/EmbeddingConfigPanel.vue'
 import ImageConfigPanel from '@/components/config/ImageConfigPanel.vue'
 import ProxyConfigPanel from '@/components/config/ProxyConfigPanel.vue'
+import { confirmDialog } from '@/stores/confirm'
 
 const configStore = useConfigStore()
 
@@ -14,7 +15,13 @@ const llmPreset = ref<Record<string, unknown> | null>(null)
 const embPreset = ref<Record<string, unknown> | null>(null)
 const imgPreset = ref<Record<string, unknown> | null>(null)
 
-function applyTemplate(t: RecommendedTemplate) {
+async function applyTemplate(t: RecommendedTemplate) {
+  // M20: 已编辑但未保存的表单在覆盖前确认
+  const current = t.kind === 'llm' ? llmPreset.value
+    : t.kind === 'embedding' ? embPreset.value : imgPreset.value
+  if (current && Object.keys(current).length > 0) {
+    if (!(await confirmDialog(`当前 ${t.kind === 'llm' ? 'LLM' : t.kind === 'embedding' ? 'Embedding' : 'Image'} 表单已有未保存的修改，应用模板将覆盖。继续？`))) return
+  }
   if (t.kind === 'llm') llmPreset.value = { ...t.preset }
   else if (t.kind === 'embedding') embPreset.value = { ...t.preset }
   else imgPreset.value = { ...t.preset }

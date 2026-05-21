@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useConfigStore } from '@/stores/config'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 
 const projectStore = useProjectStore()
 const configStore = useConfigStore()
@@ -62,7 +63,7 @@ async function copyPath() {
 async function onDelete() {
   const name = projectStore.activeProject
   if (!name) return
-  if (!confirm(`确定要删除项目「${name}」吗？项目文件将被移至 trash 目录。`)) return
+  if (!(await confirmDialog(`确定要删除项目「${name}」吗？项目文件将被移至 trash 目录。`))) return
   deleting.value = true
   try {
     await projectStore.deleteProject(name)

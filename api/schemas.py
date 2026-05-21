@@ -532,6 +532,19 @@ class ImagePromptImportRequest(BaseModel):
     replace: bool = False
 
 
+class ImageBatchDeleteRequest(BaseModel):
+    """通用图片记录/提示词批量删除请求 (M13)。上限 500 条防止意外大批量操作。"""
+    filepath: str = "./output"
+    ids: List[str] = []
+    delete_file: bool = True
+
+    def cleaned_ids(self, max_items: int = 500) -> List[str]:
+        ids = [s for s in (str(x).strip() for x in self.ids) if s]
+        if len(ids) > max_items:
+            raise ValueError(f"一次最多删除 {max_items} 条，当前 {len(ids)} 条")
+        return ids
+
+
 class ManjuImagePromptImportRequest(BaseModel):
     filepath: str = "./output"
     kind: str = "all"

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { logsApi } from '@/api/client'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 
 const feedback = useFeedbackStore()
+const router = useRouter()
 
 type Tab = 'logs' | 'prompts'
 const activeTab = ref<Tab>('logs')
@@ -62,7 +65,12 @@ function deriveHint(text: string): string {
 }
 
 function detectModule(line: string): string {
-  // Heuristic: look for "module:xxx" or known prefixes
+  // M34: 优先解析 Python 标准日志格式 `LEVEL [logger.name] msg` 或 `[logger.name]`
+  const named = line.match(/\[([a-zA-Z][\w.]*)\]/)
+  if (named) {
+    const root = named[1].split('.')[0].toLowerCase()
+    if (root && root !== 'root') return root
+  }
   const m = line.match(/\b(novel_generator|knowledge|manju|images|brainstorm|config|generate|styles|consistency|projects)\b/i)
   if (m) return m[1].toLowerCase()
   return 'system'
@@ -160,7 +168,7 @@ async function loadLogs() {
 }
 
 async function clearLogs() {
-  if (!confirm('确认清空运行日志？')) return
+  if (!(await confirmDialog('确认清空运行日志？'))) return
   try {
     await logsApi.clear()
     logRaw.value = ''
@@ -230,7 +238,7 @@ async function loadPrompts() {
 }
 
 async function clearPrompts() {
-  if (!confirm('确认清空所有 Prompt 历史？')) return
+  if (!(await confirmDialog('确认清空所有 Prompt 历史？'))) return
   try {
     await logsApi.clearPrompts()
     promptRecords.value = []
@@ -373,7 +381,10 @@ onMounted(() => {
             <button v-if="e.stack.length" @click="copyEntry(e)" class="lg-copy" type="button" title="复制错误堆栈">📋 堆栈</button>
           </div>
           <pre v-if="e.stack.length" class="lg-stack">{{ e.stack.join('\n') }}</pre>
-          <div v-if="e.hint" class="lg-hint">💡 下一步：{{ e.hint }}</div>
+          <div v-if="e.hint" class="lg-hint">
+            💡 下一步：{{ e.hint }}
+            <button v-if="e.hint.includes('模型配置')" class="lg-hint-link" @click="router.push('/config')" type="button">前往模型配置 →</button>
+          </div>
         </div>
       </div>
     </div>
@@ -528,4 +539,6 @@ onMounted(() => {
 .lg-copy { font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--color-parchment-darker); background: white; cursor: pointer; }
 .lg-stack { margin: 6px 0 0 0; padding: 6px 10px; background: #1f1f1f; color: #f3f3f3; border-radius: 4px; font-size: 11px; white-space: pre-wrap; max-height: 220px; overflow: auto; font-family: var(--font-mono, monospace); }
 .lg-hint { margin-top: 6px; padding: 6px 10px; background: #ecfeff; border: 1px dashed #67e8f9; border-radius: 4px; color: #075985; font-size: 12px; }
+.lg-hint-link { background: transparent; border: 0; color: #0369a1; font-weight: 600; padding: 0 4px; cursor: pointer; text-decoration: underline; margin-left: 4px; }
+.lg-hint-link:hover { color: #0c4a6e; }
 </style>

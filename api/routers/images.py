@@ -20,7 +20,7 @@ from api.image_service import (
     save_generated_image,
     safe_served_image_path,
 )
-from api.schemas import ImageGenerateRequest, ImagePromptImportRequest
+from api.schemas import ImageGenerateRequest, ImagePromptImportRequest, ImageBatchDeleteRequest
 from api.security import normalize_project_path
 
 router = APIRouter(tags=["images"])
@@ -129,17 +129,19 @@ def delete_generated_image_record(record_id: str, filepath: str = "./output", de
 
 
 @router.post("/images/records/batch-delete")
-def batch_delete_generated_image_records(body: dict):
-    filepath = normalize_project_path(str(body.get("filepath") or "./output"), allow_blank=False)
-    ids = [str(x) for x in (body.get("ids") or []) if str(x).strip()]
-    delete_file = bool(body.get("delete_file", True))
+def batch_delete_generated_image_records(body: ImageBatchDeleteRequest):
+    filepath = normalize_project_path(body.filepath, allow_blank=False)
+    try:
+        ids = body.cleaned_ids()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not ids:
         raise HTTPException(status_code=400, detail="未提供要删除的记录")
     rows: list = []
     failed: list[str] = []
     for record_id in ids:
         try:
-            rows = delete_image_record(filepath, record_id=record_id, delete_file=delete_file)
+            rows = delete_image_record(filepath, record_id=record_id, delete_file=body.delete_file)
         except HTTPException:
             failed.append(record_id)
     return {
@@ -152,9 +154,12 @@ def batch_delete_generated_image_records(body: dict):
 
 
 @router.post("/images/prompts/batch-delete")
-def batch_delete_image_prompts(body: dict):
-    filepath = normalize_project_path(str(body.get("filepath") or "./output"), allow_blank=False)
-    ids = [str(x) for x in (body.get("ids") or []) if str(x).strip()]
+def batch_delete_image_prompts(body: ImageBatchDeleteRequest):
+    filepath = normalize_project_path(body.filepath, allow_blank=False)
+    try:
+        ids = body.cleaned_ids()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not ids:
         raise HTTPException(status_code=400, detail="未提供要删除的提示词")
     rows: list = []

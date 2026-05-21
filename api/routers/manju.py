@@ -30,7 +30,6 @@ from api.security import normalize_project_path, safe_join
 from api.schemas import (
     ManjuCharactersUpdateRequest,
     ManjuGenerateRequest,
-    ManjuImageConfigRequest,
     ManjuImageGenerateRequest,
     ManjuImagePromptImportRequest,
     ManjuPromptEnhanceRequest,
@@ -1024,19 +1023,6 @@ def save_style_template(body: ManjuStyleTemplateRequest):
     return {"message": "✅ 美术风格模板已保存", "templates": _load_style_templates(body.filepath)}
 
 
-@router.put("/manju/image-config")
-def save_image_config(body: ManjuImageConfigRequest):
-    existing = _read_json(_image_config_path(body.filepath), {})
-    config = body.model_dump(exclude={"filepath"})
-    config["provider"] = (config.get("provider") or "openai").strip().lower()
-    config["output_format"] = (config.get("output_format") or "png").strip().lower().lstrip(".")
-    if not config.get("api_key") or config.get("api_key") == "***":
-        config["api_key"] = existing.get("api_key", "")
-    _write_json(_image_config_path(body.filepath), config)
-    safe_config = {**config, "api_key": "***" if config.get("api_key") else ""}
-    return {"message": "✅ 图片生成接口设置已保存", "image_config": safe_config}
-
-
 def _download_image_url(url: str) -> bytes | None:
     if not url or not re.match(r"^https?://", url, re.IGNORECASE):
         return None
@@ -1434,9 +1420,17 @@ def continuity_check(filepath: str = "./output"):
             issues.append({"level": "warning", "shot_id": row.get("id"), "message": "缺少背景场景/地点，后续画面连续性较弱"})
         if not row.get("light"):
             issues.append({"level": "warning", "shot_id": row.get("id"), "message": "缺少光影色彩/时间信息"})
-        prompt, negative = _build_storyboard_image_prompt(filepath, row)
-        for flag in _quality_flags(prompt, negative):
-            issues.append({"level": "warning", "shot_id": row.get("id"), "message": f"生图提示词{flag}"})
+        # M12: 对用户编辑过的 prompt_positive 直接检查质量标志
+        user_prompt = str(row.get("prompt_positive", ""))
+        user_negative = str(row.get("prompt_negative", ""))
+        if user_prompt:
+            for flag in _quality_flags(user_prompt, user_negative):
+                issues.append({"level": "warning", "shot_id": row.get("id"), "message": f"生图提示词{flag}"})
+        else:
+            # 无用户编辑的 prompt，用重建的 prompt 检查
+            prompt, negative = _build_storyboard_image_prompt(filepath, row)
+            for flag in _quality_flags(prompt, negative):
+                issues.append({"level": "warning", "shot_id": row.get("id"), "message": f"生图提示词{flag}"})
         for name in mentioned - locked_names:
             issues.append({"level": "warning", "shot_id": row.get("id"), "message": f"角色“{name}”未锁定，可能发生外貌漂移"})
         if prev and row.get("chapter_num") == prev.get("chapter_num"):

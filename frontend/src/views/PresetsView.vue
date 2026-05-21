@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { presetsApi } from '@/api/client'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 
 interface PromptMeta { category: string; tags: string[]; description: string }
 interface CategoryInfo { label: string; description: string; order: number }
@@ -172,7 +173,7 @@ async function savePrompt() {
 
 async function resetPrompt() {
   if (!selectedKey.value) return
-  if (!window.confirm(`确认重置「${selectedRow.value?.title || selectedKey.value}」为默认内容？此操作不可撤销。`)) return
+  if (!(await confirmDialog(`确认重置「${selectedRow.value?.title || selectedKey.value}」为默认内容？此操作不可撤销。`))) return
   try {
     const res = await presetsApi.resetPrompt(selectedKey.value)
     promptContent.value = res.data.content
@@ -211,7 +212,7 @@ async function saveAsNew() {
 }
 
 async function deletePreset(name: string) {
-  if (!window.confirm(`确认删除方案「${name}」？此操作不可撤销。`)) return
+  if (!(await confirmDialog(`确认删除方案「${name}」？此操作不可撤销。`))) return
   try {
     const res = await presetsApi.delete(name)
     feedback.success(res.data.message ?? '已删除')

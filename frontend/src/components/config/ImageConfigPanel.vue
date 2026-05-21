@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { configApi, postSSE } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 import { useConfigHealth, relativeTestTime, statusIcon } from '@/composables/useConfigHealth'
 import { validateImage } from '@/composables/useConfigValidation'
 import { classifyImageError } from '@/composables/useImageError'
@@ -75,7 +76,7 @@ async function save() {
 
 async function deleteSelected() {
   if (!selected.value) return
-  if (!confirm(`确认删除配置「${selected.value}」？`)) return
+  if (!(await confirmDialog(`确认删除配置「${selected.value}」？`))) return
   try {
     await configApi.deleteImage(selected.value)
     feedback.success(`✅ 已删除「${selected.value}」`)
@@ -97,8 +98,9 @@ function runTest(onSuccess?: () => void) {
       api_key: form.value.api_key,
       base_url: form.value.base_url,
       model: form.value.model,
-      size: '1024x1024',
-      quality: 'low',
+      // M24: 使用保存的参数测试，否则会绕过用户实际配置的尺寸/质量。
+      size: form.value.size || '1024x1024',
+      quality: form.value.quality || 'low',
       output_format: form.value.output_format,
     },
     (msg) => { testResult.value = msg },

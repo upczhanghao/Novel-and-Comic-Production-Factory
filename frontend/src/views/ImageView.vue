@@ -4,6 +4,7 @@ import { imagesApi } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
 import { useProjectStore } from '@/stores/project'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 import { useTasksStore } from '@/stores/tasks'
 import PromptEditor from '@/components/image/PromptEditor.vue'
 import ImageErrorBanner from '@/components/image/ImageErrorBanner.vue'
@@ -61,6 +62,23 @@ function buildBody(prompt: string, opts?: { sourceType?: string; sourceId?: stri
 
 function combinedPrompt(p: string, n?: string) {
   return n?.trim() ? `${p}\n\n负向提示词：${n}` : p
+}
+
+// M11: 429 自动退避 — 遇到限流时指数退避重试,最多 3 次
+async function generateWithBackoff(body: ReturnType<typeof buildBody>, maxRetries = 3) {
+  let delay = 1000
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await imagesApi.generate(body)
+    } catch (e) {
+      const msg = (e as Error).message || ''
+      const is429 = /429|rate.?limit|too many/i.test(msg)
+      if (!is429 || attempt === maxRetries) throw e
+      await new Promise((r) => setTimeout(r, delay))
+      delay *= 2
+    }
+  }
+  throw new Error('unreachable')
 }
 
 async function loadGallery() {
@@ -143,7 +161,10 @@ async function batchGenerate(items: PromptItem[]) {
     feedback.warning('请先选择图片配置')
     return
   }
-  if (!confirm(`将使用配置「${selectedConfig.value}」生成 ${items.length} 张图片（并发 ${concurrency.value}）？`)) return
+  // 简单估时：约 8 秒/张，按并发度并行
+  const estSeconds = Math.ceil((items.length * 8) / Math.max(1, concurrency.value))
+  const estMin = Math.ceil(estSeconds / 60)
+  if (!(await confirmDialog(`将使用配置「${selectedConfig.value}」生成 ${items.length} 张图片（并发 ${concurrency.value}，预计约 ${estMin} 分钟，遇 429 自动退避重试）？`))) return
 
   cancelBatch.value = false
   generating.value = true
@@ -163,7 +184,7 @@ async function batchGenerate(items: PromptItem[]) {
       })
       try {
         tasks.update(taskId, `${i + 1}/${total} 生成中…`, Math.round(((i + 0.5) / total) * 100))
-        const res = await imagesApi.generate(
+        const res = await generateWithBackoff(
           buildBody(combinedPrompt(item.prompt, item.negative_prompt), {
             sourceType: item.source_type ?? 'custom',
             sourceId: item.source_id ?? item.id,
@@ -201,7 +222,7 @@ async function batchGenerate(items: PromptItem[]) {
 
 async function batchDeletePromptItems(items: PromptItem[]) {
   if (!items.length) return
-  if (!confirm(`删除 ${items.length} 条提示词？`)) return
+  if (!(await confirmDialog(`删除 ${items.length} 条提示词？`))) return
   const backup = [...items]
   try {
     const res = await imagesApi.batchDeletePrompts(items.map((i) => i.id), filepath.value)
@@ -233,7 +254,7 @@ async function deleteOnePrompt(item: PromptItem) {
 
 async function batchDeleteRecords(records: ImageRecord[]) {
   if (!records.length) return
-  if (!confirm(`删除 ${records.length} 张图片记录及文件？`)) return
+  if (!(await confirmDialog(`删除 ${records.length} 张图片记录及文件？`))) return
   try {
     await imagesApi.batchDeleteRecords(records.map((r) => r.id), filepath.value, true)
     recordsSelected.value = []
@@ -248,7 +269,7 @@ async function batchDeleteRecords(records: ImageRecord[]) {
 }
 
 async function deleteOneRecord(record: ImageRecord) {
-  if (!confirm(`删除「${record.filename || record.id}」及文件？`)) return
+  if (!(await confirmDialog(`删除「${record.filename || record.id}」及文件？`))) return
   try {
     await imagesApi.deleteRecord(record.id, filepath.value, true)
     if (currentImage.value?.id === record.id) currentImage.value = null
@@ -313,7 +334,7 @@ async function batchRetryRecords(records: ImageRecord[]) {
       tasks.register(taskId, `重试 ${r.filename || r.id}`, () => { cancelBatch.value = true })
       try {
         tasks.update(taskId, `${i + 1}/${total}`, Math.round(((i + 0.5) / total) * 100))
-        const res = await imagesApi.generate({
+        const res = await generateWithBackoff({
           config_name: r.config_name && configStore.imageChoices.includes(r.config_name) ? r.config_name : selectedConfig.value,
           prompt: r.prompt!,
           filepath: filepath.value,

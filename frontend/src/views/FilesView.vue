@@ -3,6 +3,8 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { filesApi } from '@/api/client'
 import { useProjectStore } from '@/stores/project'
 import { useFeedbackStore } from '@/stores/feedback'
+import { useGenerateStore } from '@/stores/generate'
+import { confirmDialog } from '@/stores/confirm'
 import FileTreeNode, { type FileTreeNode as FileTreeNodeT } from '@/components/FileTreeNode.vue'
 
 interface FileEntry {
@@ -22,6 +24,7 @@ interface SearchHit {
 
 const projectStore = useProjectStore()
 const feedback = useFeedbackStore()
+const generateStore = useGenerateStore()
 
 type Pane = 'tree' | 'recent' | 'search'
 const pane = ref<Pane>('tree')
@@ -121,6 +124,7 @@ async function saveEdit() {
     fileContent.value = draft.value
     editing.value = false
     feedback.success(`✅ 已保存 ${selectedFile.value.path}`)
+    await generateStore.invalidateForPath(selectedFile.value.path)
     await loadAll()
   } catch (e) {
     feedback.error('保存失败', (e as Error).message)
@@ -130,7 +134,7 @@ async function saveEdit() {
 }
 
 async function deleteOne(path: string) {
-  if (!confirm(`确认删除「${path}」？（文件会移入 trash 目录）`)) return
+  if (!(await confirmDialog(`确认删除「${path}」？（文件会移入 trash 目录）`))) return
   try {
     await filesApi.deleteItem(projectStore.filepath, path)
     if (selectedFile.value?.path === path) {
@@ -148,7 +152,7 @@ async function deleteOne(path: string) {
 async function batchDelete() {
   const paths = [...checked.value]
   if (!paths.length) return
-  if (!confirm(`确认删除选中的 ${paths.length} 个文件？`)) return
+  if (!(await confirmDialog(`确认删除选中的 ${paths.length} 个文件？`))) return
   try {
     const res = await filesApi.batchDelete(projectStore.filepath, paths)
     feedback.success(res.data.message ?? '✅ 已删除')

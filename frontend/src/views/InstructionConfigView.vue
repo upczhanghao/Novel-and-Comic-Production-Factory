@@ -2,6 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { configApi } from '@/api/client'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
+
+// M23: 只有从 /manju 跳转过来时才显示返回按钮
+const cameFromManju = ref(false)
 
 type InstructionTemplate = {
   key: string
@@ -88,7 +92,7 @@ async function saveTemplate() {
 
 async function resetTemplate() {
   if (!selectedTemplate.value) return
-  if (!confirm(`确认将「${selectedTemplate.value.title}」恢复为默认？`)) return
+  if (!(await confirmDialog(`确认将「${selectedTemplate.value.title}」恢复为默认？`))) return
   saving.value = true
   try {
     const res = await configApi.resetManjuInstruction(selectedKey.value)
@@ -151,7 +155,11 @@ function insertVariable(name: string) {
   editorContent.value = (editorContent.value || '') + `{${name}}`
 }
 
-onMounted(loadTemplates)
+onMounted(() => {
+  // 通过 referrer 简单判断来源；不能保证 100%，仅用于决定是否显示返回按钮
+  cameFromManju.value = typeof document !== 'undefined' && /\/manju(\b|$)/.test(document.referrer || '')
+  loadTemplates()
+})
 </script>
 
 <template>
@@ -164,7 +172,7 @@ onMounted(loadTemplates)
           漫剧制作模块发送给 AI 的核心指令模板。支持变量高亮、缺失检查与一键恢复默认。
         </p>
       </div>
-      <router-link to="/manju" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm hover:bg-white transition-colors">
+      <router-link v-if="cameFromManju" to="/manju" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm hover:bg-white transition-colors">
         返回漫剧制作
       </router-link>
     </div>

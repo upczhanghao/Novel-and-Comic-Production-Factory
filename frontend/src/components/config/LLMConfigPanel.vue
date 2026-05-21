@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { configApi, postSSE } from '@/api/client'
 import { useConfigStore, LLM_DEFAULT_SLOTS } from '@/stores/config'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 import { useConfigHealth, relativeTestTime, statusIcon } from '@/composables/useConfigHealth'
 import { validateLLM } from '@/composables/useConfigValidation'
 import ConfigSectionHeader from './ConfigSectionHeader.vue'
@@ -86,7 +87,7 @@ async function save() {
 
 async function deleteSelected() {
   if (!selected.value) return
-  if (!confirm(`确认删除配置「${selected.value}」？`)) return
+  if (!(await confirmDialog(`确认删除配置「${selected.value}」？`))) return
   try {
     await configApi.deleteLLM(selected.value)
     feedback.success(`✅ 已删除「${selected.value}」`)

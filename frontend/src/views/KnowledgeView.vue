@@ -4,6 +4,7 @@ import { knowledgeApi } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
 import { useProjectStore } from '@/stores/project'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 
 interface FileRecord {
   file_id: string
@@ -141,7 +142,7 @@ async function importFile() {
 }
 
 async function deleteFile(rec: FileRecord) {
-  if (!confirm(`确认删除「${rec.filename}」？该操作会从向量库中精确移除该文件的所有片段。`)) return
+  if (!(await confirmDialog(`确认删除「${rec.filename}」？该操作会从向量库中精确移除该文件的所有片段。`))) return
   try {
     await knowledgeApi.deleteFile(rec.file_id, projectStore.filepath, embConfig.value)
     feedback.success(`已删除「${rec.filename}」`)
@@ -195,7 +196,7 @@ function triggerReplace(rec: FileRecord) {
 async function onReplaceFile(e: Event, rec: FileRecord) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
-  if (!confirm(`确认用「${file.name}」替换「${rec.filename}」？旧向量将被删除并重新嵌入。`)) {
+  if (!(await confirmDialog(`确认用「${file.name}」替换「${rec.filename}」？旧向量将被删除并重新嵌入。`))) {
     (e.target as HTMLInputElement).value = ''
     return
   }
@@ -241,7 +242,7 @@ async function doSearch() {
 }
 
 async function clearLibrary() {
-  if (!confirm('确认清空整个知识库？该操作会删除所有源文件与向量。')) return
+  if (!(await confirmDialog('确认清空整个知识库？该操作会删除所有源文件与向量。'))) return
   try {
     await knowledgeApi.clear(projectStore.filepath)
     feedback.success('知识库已清空')
@@ -256,7 +257,7 @@ async function rebuildLibrary() {
     feedback.warning('请先选择 Embedding 配置')
     return
   }
-  if (!confirm('确认重建索引？将删除向量库后基于已保存源文件重新嵌入，可能需要数十秒到几分钟。')) return
+  if (!(await confirmDialog('确认重建索引？将删除向量库后基于已保存源文件重新嵌入，可能需要数十秒到几分钟。'))) return
   rebuilding.value = true
   try {
     const res = await knowledgeApi.rebuild(projectStore.filepath, embConfig.value)

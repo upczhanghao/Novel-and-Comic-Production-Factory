@@ -926,7 +926,10 @@ export function useWorkshopState() {
             expandNew.value = data.expanded || ''
             expandChapterNum.value = data.chapter_num || chapterNum.value
             s.result = '' // 清空 result，用 expandNew 展示
-          } catch { /* 解析失败则保持原样 */ }
+          } catch (err) {
+            // 解析失败：保留 result 展示原始返回，附加错误提示
+            s.error = `无法解析对比 JSON：${(err as Error).message}（原始返回已保留在下方）`
+          }
         }
       },
       (err) => { s.error = err; s.running = false },

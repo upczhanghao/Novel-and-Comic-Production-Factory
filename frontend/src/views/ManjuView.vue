@@ -4,6 +4,7 @@ import { manjuApi, postSSE, type SSEHandle } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
 import { useProjectStore } from '@/stores/project'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 import { useManjuHistory } from '@/composables/useManjuHistory'
 import StreamOutput from '@/components/StreamOutput.vue'
 import ManjuSteps from '@/components/manju/ManjuSteps.vue'
@@ -138,7 +139,10 @@ const currentSettings = computed<ManjuSettings>(() => ({
   extra_guidance: extraGuidance.value,
 }))
 const settingsDirty = computed(() => JSON.stringify(currentSettings.value) !== JSON.stringify(appliedSettings.value))
-const canGenerate = computed(() => Boolean(llmConfig.value && chapters.value.length && appliedSettings.value && !settingsDirty.value))
+// M10: 脚本步骤只用 scriptBody()，不需要 appliedSettings；其他下游步骤才依赖
+const canRunScript = computed(() => Boolean(llmConfig.value && chapters.value.length))
+const canRunDownstream = computed(() => Boolean(llmConfig.value && chapters.value.length && appliedSettings.value && !settingsDirty.value))
+const canGenerate = canRunDownstream
 
 function onFileChange(e: Event) {
   file.value = (e.target as HTMLInputElement).files?.[0] ?? null
@@ -170,8 +174,8 @@ async function loadStatus() {
       appliedSettings.value = { ...currentSettings.value }
       settingsMsg.value = ''
     }
-  } catch {
-    // ignore empty state
+  } catch (e: unknown) {
+    feedback.error('加载漫剧状态失败', (e as Error).message)
   }
 }
 
@@ -320,19 +324,19 @@ function exportScriptTxt() {
 
 async function refreshStructuredData() {
   await loadStatus()
-  dataMsg.value = '✅ 制片数据已刷新'
+  feedback.success('制片数据已刷新')
 }
 
 async function saveCharacterCards() {
   const res = await manjuApi.saveCharacters({ filepath: filepath.value, characters: characterCards.value })
   characterCards.value = res.data.characters ?? characterCards.value
-  dataMsg.value = res.data.message
+  feedback.success(res.data.message)
 }
 
 async function saveStoryboardShots() {
   const res = await manjuApi.saveStoryboards({ filepath: filepath.value, shots: storyboardShots.value })
   storyboardShots.value = res.data.shots ?? storyboardShots.value
-  dataMsg.value = res.data.message
+  feedback.success(res.data.message)
 }
 
 function applyStyleTemplate() {
@@ -352,7 +356,7 @@ async function saveCurrentStyle() {
   })
   styleTemplates.value = res.data.templates ?? styleTemplates.value
   selectedStyle.value = name
-  dataMsg.value = res.data.message
+  feedback.success(res.data.message)
 }
 
 function exportAssets(kind: string, format: string) {
@@ -371,9 +375,11 @@ async function importImagePrompts(kind: string) {
       kind,
       replace: false,
     })
-    dataMsg.value = res.data.message
+    dataMsg.value = ''
+    feedback.success(res.data.message)
   } catch (e: unknown) {
-    dataMsg.value = `❌ 导入失败：${(e as Error).message}`
+    dataMsg.value = ''
+    feedback.error('导入失败', (e as Error).message)
   }
 }
 
@@ -388,9 +394,11 @@ async function enhancePrompts(kind = 'all') {
     })
     if (res.data.characters) characterCards.value = res.data.characters
     if (res.data.storyboards) storyboardShots.value = res.data.storyboards
-    dataMsg.value = res.data.message
+    dataMsg.value = ''
+    feedback.success(res.data.message)
   } catch (e: unknown) {
-    dataMsg.value = `❌ 提示词增强失败：${(e as Error).message}`
+    dataMsg.value = ''
+    feedback.error('提示词增强失败', (e as Error).message)
   } finally {
     enhancingPrompts.value = false
   }
@@ -400,14 +408,14 @@ async function runContinuityCheck() {
   const res = await manjuApi.continuityCheck(filepath.value)
   continuityIssues.value = res.data.issues ?? []
   continuityChecked.value = true
-  dataMsg.value = `连续性检查完成：${res.data.issue_count ?? 0} 个提示`
+  feedback.success(`连续性检查完成：${res.data.issue_count ?? 0} 个提示`)
 }
 
 async function loadStats() {
   const res = await manjuApi.stats(filepath.value)
   statsRows.value = res.data.appearances ?? []
   relationRows.value = res.data.relations ?? []
-  dataMsg.value = '✅ 角色统计已刷新'
+  feedback.success('角色统计已刷新')
 }
 
 function openImagePreview(url: string) {
@@ -416,7 +424,7 @@ function openImagePreview(url: string) {
 
 async function generateShotImage(shot: StoryboardShot) {
   if (!selectedImageConfig.value) {
-    dataMsg.value = '❌ 请先选择图片生成配置'
+    feedback.error('请先选择图片生成配置')
     return
   }  const next = new Set(generatingImageIds.value)
   next.add(shot.id)
@@ -433,9 +441,11 @@ async function generateShotImage(shot: StoryboardShot) {
     shot.image_url = res.data.url
     shot.image_download_url = res.data.download_url
     shot.image_relative_path = res.data.relative_path
-    dataMsg.value = res.data.message
+    dataMsg.value = ''
+    feedback.success(res.data.message)
   } catch (e: unknown) {
-    dataMsg.value = `❌ 图片生成失败：${(e as Error).message}`
+    dataMsg.value = ''
+    feedback.error('图片生成失败', (e as Error).message)
   } finally {
     const rest = new Set(generatingImageIds.value)
     rest.delete(shot.id)
@@ -457,11 +467,19 @@ async function regenerateShot(shot: StoryboardShot) {
     const updated = res.data.shot as StoryboardShot
     const idx = storyboardShots.value.findIndex((item) => item.id === updated.id)
     if (idx >= 0) storyboardShots.value[idx] = updated
-    dataMsg.value = res.data.message
+    dataMsg.value = ''
+    feedback.success(res.data.message)
   } catch (e) {
     dataMsg.value = ''
     feedback.error('重写分镜失败', (e as Error).message)
   }
+}
+
+function stopSSE(state: StepState) {
+  state.sseHandle?.abort()
+  state.sseHandle = null
+  state.running = false
+  state.progress = '已停止'
 }
 
 async function createQueue() {
@@ -473,13 +491,13 @@ async function createQueue() {
     chunk_size: 5,
   })
   queueRows.value = res.data.queue ?? []
-  dataMsg.value = res.data.message
+  feedback.success(res.data.message)
 }
 
 async function updateQueue(batchId: string, status: string) {
   const res = await manjuApi.updateQueue(batchId, filepath.value, status)
   queueRows.value = res.data.queue ?? []
-  dataMsg.value = res.data.message
+  feedback.success(res.data.message)
 }
 
 onMounted(async () => {
@@ -554,7 +572,7 @@ async function bulkCharLock(lock: boolean) {
   feedback.success(`已${lock ? '锁定' : '解锁'} ${n} 个角色`)
 }
 async function bulkCharDelete() {
-  if (!confirm(`删除 ${selectedCharIds.value.length} 个角色？`)) return
+  if (!(await confirmDialog(`删除 ${selectedCharIds.value.length} 个角色？`))) return
   const before = JSON.parse(JSON.stringify(characterCards.value))
   characterCards.value = characterCards.value.filter((c) => !selectedCharIds.value.includes(c.id))
   await saveCharacterCards()
@@ -571,7 +589,7 @@ async function bulkShotLock(lock: boolean) {
   feedback.success(`已${lock ? '锁定' : '解锁'} ${n} 个分镜`)
 }
 async function bulkShotDelete() {
-  if (!confirm(`删除 ${selectedShotIds.value.length} 个分镜？`)) return
+  if (!(await confirmDialog(`删除 ${selectedShotIds.value.length} 个分镜？`))) return
   const before = JSON.parse(JSON.stringify(storyboardShots.value))
   storyboardShots.value = storyboardShots.value.filter((s) => !selectedShotIds.value.includes(s.id))
   await saveStoryboardShots()
@@ -631,7 +649,7 @@ async function enhancePromptsWithDiff(kind = 'all') {
     enhanceDiff.value = pairs.filter((p) => p.before !== p.after)
     characterCards.value = newChars
     storyboardShots.value = newShots
-    dataMsg.value = res.data.message
+    dataMsg.value = ''
     feedback.success(`增强完成：${enhanceDiff.value.length} 条变化，可逐条选择应用`)
   } catch (e) {
     feedback.error('提示词增强失败', (e as Error).message)
@@ -879,13 +897,14 @@ watch(() => characters.value.running, (running, prev) => {
             <div class="module-action-row">
               <button
                 @click="generateScriptAdaptation"
-                :disabled="scriptAdapt.running || !canGenerate"
+                :disabled="scriptAdapt.running || !canRunScript"
                 class="px-4 py-2 rounded-md text-sm font-semibold disabled:opacity-50"
                 style="background-color: var(--color-leather); color: var(--color-parchment)"
                 type="button"
               >
                 {{ scriptAdapt.running ? '改编中...' : '生成漫剧剧本' }}
               </button>
+              <button v-if="scriptAdapt.running" @click="stopSSE(scriptAdapt)" class="px-3 py-2 rounded-md text-xs bg-red-600 text-white hover:bg-red-700" type="button">停止</button>
               <button
                 @click="exportScriptTxt"
                 :disabled="!scriptAdapt.result"
@@ -955,6 +974,7 @@ watch(() => characters.value.running, (running, prev) => {
               >
                 {{ characters.running ? '生成中...' : '生成角色卡' }}
               </button>
+              <button v-if="characters.running" @click="stopSSE(characters)" class="px-3 py-2 rounded-md text-xs bg-red-600 text-white hover:bg-red-700" type="button">停止</button>
             </div>
           </div>
           <div class="p-4 pt-0">
@@ -982,6 +1002,7 @@ watch(() => characters.value.running, (running, prev) => {
               >
                 {{ scenes.running ? '生成中...' : '生成场景提示词' }}
               </button>
+              <button v-if="scenes.running" @click="stopSSE(scenes)" class="px-3 py-2 rounded-md text-xs bg-red-600 text-white hover:bg-red-700" type="button">停止</button>
             </div>
           </div>
           <div class="p-4 pt-0">
@@ -1009,6 +1030,7 @@ watch(() => characters.value.running, (running, prev) => {
               >
                 {{ storyboards.running ? '生成中...' : '生成分镜提示词' }}
               </button>
+              <button v-if="storyboards.running" @click="stopSSE(storyboards)" class="px-3 py-2 rounded-md text-xs bg-red-600 text-white hover:bg-red-700" type="button">停止</button>
             </div>
           </div>
           <div class="p-4 pt-0">

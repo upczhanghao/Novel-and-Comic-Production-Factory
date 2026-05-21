@@ -1,4 +1,6 @@
 import axios from 'axios'
+import { useTasksStore } from '@/stores/tasks'
+import { useFeedbackStore } from '@/stores/feedback'
 
 function apiToken(): string {
   return localStorage.getItem('novelwriter_api_token') || import.meta.env.VITE_NOVELWRITER_API_TOKEN || ''
@@ -211,9 +213,15 @@ export function postSSETracked(
     silentError?: boolean
   },
 ): SSEHandle {
-  // 懒加载避免循环依赖
-  const tasksMod = (window as unknown as { __nwTasks?: ReturnType<typeof import('@/stores/tasks').useTasksStore> }).__nwTasks
-  const fbMod = (window as unknown as { __nwFeedback?: ReturnType<typeof import('@/stores/feedback').useFeedbackStore> }).__nwFeedback
+  // M26: 直接使用 store（stores 不 import client，无循环依赖）。Pinia 未初始化时降级为 undefined。
+  let tasksMod: ReturnType<typeof useTasksStore> | undefined
+  let fbMod: ReturnType<typeof useFeedbackStore> | undefined
+  try {
+    tasksMod = useTasksStore()
+    fbMod = useFeedbackStore()
+  } catch {
+    // pinia 尚未挂载（罕见边界）；继续以无 store 模式工作
+  }
   let handle: SSEHandle | null = null
   const abort = () => handle?.abort()
   const task = tasksMod?.register(opts.taskId, opts.taskLabel, abort)
@@ -449,7 +457,6 @@ export const manjuApi = {
   saveStoryboards: (body: Record<string, unknown>) => api.put('/manju/storyboards/structured', body),
   regenerateShot: (body: Record<string, unknown>) => api.post('/manju/storyboards/regenerate-shot', body, { timeout: 180000 }),
   saveStyle: (body: Record<string, unknown>) => api.post('/manju/styles', body),
-  saveImageConfig: (body: Record<string, unknown>) => api.put('/manju/image-config', body),
   generateImage: (body: Record<string, unknown>) => api.post('/manju/images/generate', body, { timeout: 300000 }),
   enhancePrompts: (body: Record<string, unknown>) => api.post('/manju/prompts/enhance', body, { timeout: 180000 }),
   continuityCheck: (filepath: string) => api.get('/manju/continuity-check', { params: { filepath } }),

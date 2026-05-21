@@ -30,9 +30,12 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLElement>()
 const hasEdited = ref(false)
+// 与 hasEdited 不同：仅在用户主动键入后置 true,用于显示「未保存」徽标
+const userDirty = ref(false)
 
 function onEdit(event: Event) {
   hasEdited.value = true
+  userDirty.value = true
   emit('update:result', (event.target as HTMLTextAreaElement).value)
 }
 
@@ -54,10 +57,11 @@ watch(
     if (running) {
       warning.value = ''
       hasEdited.value = false
+      userDirty.value = false
     }
   },
 )
-// 加载已有内容时标记为已编辑，防止清空后 textarea 消失
+// 加载已有内容时标记为已编辑，防止清空后 textarea 消失。userDirty 不变
 watch(
   () => props.result,
   (val) => {
@@ -126,6 +130,9 @@ watch(
     </div>
 
     <div class="p-3">
+      <!-- 脏标识：用户编辑后未保存 -->
+      <div v-if="userDirty && !running" class="text-xs text-amber-400 mb-1">● 未保存（生成结果已被编辑，请保存或继续到下一步）</div>
+
       <!-- 错误 -->
       <p v-if="error" class="text-red-400 whitespace-pre-wrap mb-2">{{ error }}</p>
 

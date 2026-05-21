@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import type { useWorkshopState } from '@/composables/useWorkshopState'
 import { xpPresetsApi } from '@/api/client'
+import { confirmDialog } from '@/stores/confirm'
 
 const props = defineProps<{ state: ReturnType<typeof useWorkshopState> }>()
 
@@ -76,7 +77,7 @@ async function saveXP() {
 }
 
 async function deleteXP(name: string) {
-  if (!confirm(`确认删除 XP 预设「${name}」？`)) return
+  if (!(await confirmDialog(`确认删除 XP 预设「${name}」？`))) return
   try {
     await xpPresetsApi.delete(name)
     const list = props.state.xpSelectedPresets.value

@@ -4,6 +4,7 @@ import { stylesApi, postSSE, configApi } from '@/api/client'
 import { useConfigStore } from '@/stores/config'
 import { useProjectStore } from '@/stores/project'
 import { useFeedbackStore } from '@/stores/feedback'
+import { confirmDialog } from '@/stores/confirm'
 import StreamOutput from '@/components/StreamOutput.vue'
 
 const configStore = useConfigStore()
@@ -166,7 +167,7 @@ async function importAuthorRef() {
 
 async function deleteAuthorRefFile(rec: AuthorRefRecord) {
   if (!selectedStyle.value) return
-  if (!confirm(`确认删除「${rec.filename}」？`)) return
+  if (!(await confirmDialog(`确认删除「${rec.filename}」？`))) return
   try {
     await stylesApi.deleteAuthorRefFile(selectedStyle.value, rec.file_id, authorRefEmbConfig.value)
     feedback.success(`已删除「${rec.filename}」`)
@@ -229,7 +230,7 @@ async function rebuildAuthorRef() {
     feedback.warning('请先选择 Embedding')
     return
   }
-  if (!confirm('确认重建作者参考库索引？将基于已保存源文件重新嵌入。')) return
+  if (!(await confirmDialog('确认重建作者参考库索引？将基于已保存源文件重新嵌入。'))) return
   authorRefRebuilding.value = true
   try {
     const res = await stylesApi.rebuildAuthorRef(selectedStyle.value, authorRefEmbConfig.value)
@@ -244,7 +245,7 @@ async function rebuildAuthorRef() {
 
 async function clearAuthorRef() {
   if (!selectedStyle.value) return
-  if (!confirm(`确认清空文风「${selectedStyle.value}」的作者参考库？将删除全部源文件与向量。`)) return
+  if (!(await confirmDialog(`确认清空文风「${selectedStyle.value}」的作者参考库？将删除全部源文件与向量。`))) return
   try {
     await stylesApi.clearAuthorRef(selectedStyle.value)
     authorRefStatus.value[selectedStyle.value] = false
@@ -312,7 +313,7 @@ async function saveStyle() {
 
 async function deleteStyle() {
   if (!selectedStyle.value) return
-  if (!confirm(`确认删除文风「${selectedStyle.value}」？`)) return
+  if (!(await confirmDialog(`确认删除文风「${selectedStyle.value}」？`))) return
   try {
     await stylesApi.delete(selectedStyle.value)
     await loadStyles()
@@ -391,7 +392,7 @@ function doCalibrateNarrative() {
 
 async function doRollback() {
   if (!selectedStyle.value) return
-  if (!confirm(`确认回滚文风「${selectedStyle.value}」到校准前状态？`)) return
+  if (!(await confirmDialog(`确认回滚文风「${selectedStyle.value}」到校准前状态？`))) return
   try {
     await stylesApi.rollbackCalibration(selectedStyle.value)
     await loadStyleDetail(selectedStyle.value)
@@ -441,6 +442,11 @@ async function loadDefaultStyle() {
 
 async function setAsGlobalDefault(scope: 'arch' | 'bp' | 'ch' | 'all') {
   if (!selectedStyle.value) return
+  // M21: 全局默认会影响所有未来新建的项目，需要二次确认
+  const scopeLabel = scope === 'all' ? '所有阶段（架构/蓝图/章节）'
+    : scope === 'arch' ? '架构层'
+    : scope === 'bp' ? '蓝图层' : '章节层'
+  if (!(await confirmDialog(`⚠️ 即将把「${selectedStyle.value}」设为全局默认文风（${scopeLabel}）。\n\n这会影响今后所有新建项目，已有项目不受影响。\n\n确认继续？`))) return
   const patch: Record<string, string> = {}
   if (scope === 'arch' || scope === 'all') patch.arch_style = selectedStyle.value
   if (scope === 'bp' || scope === 'all') patch.bp_style = selectedStyle.value
@@ -516,8 +522,8 @@ onMounted(async () => {
   await loadDefaultStyle()
   if (configStore.llmChoices.length) analyzeLLM.value = configStore.llmChoices[0]
   if (configStore.embeddingChoices.length) authorRefEmbConfig.value = configStore.embeddingChoices[0]
-  // 预取所有文风详情以支持过滤/筛选
-  for (const s of styleList.value) await loadStyleDetail(s)
+  // M16: 并行预取所有文风详情，避免 N+1 串行加载
+  await Promise.all(styleList.value.map((s) => loadStyleDetail(s)))
 })
 
 watch(() => configStore.llmChoices.slice(), (c) => {
@@ -732,14 +738,14 @@ watch(() => configStore.embeddingChoices.slice(), (c) => {
 
         <div class="sv-apply-group">
           <div class="sv-apply-title">设为全局默认<br />
-            <span class="sv-help">新建项目时自动应用</span>
+            <span class="sv-help">⚠️ 影响所有新建项目</span>
           </div>
           <div class="sv-apply-actions">
-            <button @click="setAsGlobalDefault('all')" type="button" class="sv-btn-primary">全部阶段</button>
+            <button @click="setAsGlobalDefault('all')" type="button" class="sv-btn-danger-outline" title="改全局默认会影响所有新建项目">全部阶段</button>
             <div class="sv-apply-row">
-              <button @click="setAsGlobalDefault('arch')" type="button" class="sv-btn">仅架构</button>
-              <button @click="setAsGlobalDefault('bp')" type="button" class="sv-btn">仅蓝图</button>
-              <button @click="setAsGlobalDefault('ch')" type="button" class="sv-btn">仅章节</button>
+              <button @click="setAsGlobalDefault('arch')" type="button" class="sv-btn-danger-outline">仅架构</button>
+              <button @click="setAsGlobalDefault('bp')" type="button" class="sv-btn-danger-outline">仅蓝图</button>
+              <button @click="setAsGlobalDefault('ch')" type="button" class="sv-btn-danger-outline">仅章节</button>
             </div>
           </div>
         </div>
@@ -959,6 +965,9 @@ watch(() => configStore.embeddingChoices.slice(), (c) => {
 .sv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .sv-btn-danger { padding: 6px 12px; font-size: 12px; border-radius: 6px;
   background: white; color: #b91c1c; border: 1px solid #fecaca; cursor: pointer; }
+.sv-btn-danger-outline { padding: 6px 12px; font-size: 12px; font-weight: 600; border-radius: 6px;
+  background: #fef2f2; color: #b91c1c; border: 1.5px solid #f87171; cursor: pointer; }
+.sv-btn-danger-outline:hover { background: #fee2e2; }
 .sv-btn-warn { padding: 6px 12px; font-size: 12px; border-radius: 6px;
   background: white; color: #c2410c; border: 1px solid #fdba74; cursor: pointer; }
 

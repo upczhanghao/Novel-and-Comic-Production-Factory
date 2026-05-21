@@ -11,6 +11,7 @@ export interface FeedbackItem {
   undoFn?: () => Promise<void> | void
   timestamp: number
   dismissed?: boolean
+  count?: number
 }
 
 let _id = 0
@@ -19,6 +20,16 @@ export const useFeedbackStore = defineStore('feedback', () => {
   const items = ref<FeedbackItem[]>([])
 
   function push(type: FeedbackType, message: string, opts?: { detail?: string; undoFn?: () => Promise<void> | void }) {
+    // M32: 同消息聚合 — 5 秒内重复的同类同文消息只递增 count
+    const recent = items.value[items.value.length - 1]
+    if (
+      recent && recent.type === type && recent.message === message &&
+      Date.now() - recent.timestamp < 5000 && !recent.undoFn && !opts?.undoFn
+    ) {
+      recent.count = (recent.count ?? 1) + 1
+      recent.timestamp = Date.now()
+      return
+    }
     const item: FeedbackItem = { id: ++_id, type, message, detail: opts?.detail, undoFn: opts?.undoFn, timestamp: Date.now() }
     items.value.push(item)
     if (type !== 'error') {
@@ -30,6 +41,10 @@ export const useFeedbackStore = defineStore('feedback', () => {
   function dismiss(id: number) {
     const idx = items.value.findIndex((i) => i.id === id)
     if (idx !== -1) items.value.splice(idx, 1)
+  }
+
+  function dismissAll() {
+    items.value = []
   }
 
   async function undo(id: number) {
@@ -46,5 +61,5 @@ export const useFeedbackStore = defineStore('feedback', () => {
   function warning(msg: string) { push('warning', msg) }
   function info(msg: string) { push('info', msg) }
 
-  return { items, push, dismiss, undo, success, error, warning, info }
+  return { items, push, dismiss, dismissAll, undo, success, error, warning, info }
 })

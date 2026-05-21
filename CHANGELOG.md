@@ -3,6 +3,52 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.1.3] - 2026-05-21
+
+### Improved — P1 审计打磨（M1–M35 中等摩擦点修复）
+
+**Workshop（M2/M4/M5）**
+- M2: StyleSelector 增加「应用到全部步骤 / 单独配置」开关；关闭后切换文风只写入当前步骤，不再静默覆盖架构/蓝图层
+- M4: StreamOutput 新增 `userDirty` 状态，「未保存」徽标只在用户编辑了生成结果后出现，避免误报
+- M5: useWorkshopState 扩展 JSON 解析失败时把异常详情写入 `state.error` 并保留原始返回，不再静默吞错
+
+**Manju / Image（M8–M15）**
+- M8: ManjuView 12 处 `dataMsg.value = '✅/❌…'` 改用 `feedback.success/error`，统一通知中心
+- M9: 漫剧状态加载失败显式弹错（含错误信息），不再 swallow
+- M10: 拆分 `canRunScript` / `canRunDownstream`，"AI 改写台本"按钮在无图片配置时仍可运行
+- M11: 批量生图遇 429 自动指数退避重试 3 次（1s/2s/4s），并在确认对话框中提示
+- M12: 一致性检查直接使用入库的 `prompt_positive` 评估质量标记，避免重新构建提示词导致的偏移
+- M13: 图片批量删除请求改为 `ImageBatchDeleteRequest` Pydantic 模型，单次最多 500 条
+- M14: 移除已弃用的 `PUT /manju/image-config` 端点和对应前端 client 方法
+- M15: 漫剧各阶段（剧本改编 / 角色 / 场景 / 分镜）SSE 运行中显示「停止」按钮，调用 `AbortController`
+
+**Config（M16/M20/M21/M23/M24/M25）**
+- M16: StylesView 加载文风详情改为 `Promise.all` 并发，消除 N+1 串行等待
+- M20: ConfigView 应用推荐模板前，若表单已编辑则弹确认对话框
+- M21: StylesView "设为全局默认" 改为红框警告按钮 + 二次确认（含影响范围说明）
+- M23: InstructionConfigView「返回漫剧」按钮仅当 `document.referrer` 来自 /manju 时显示
+- M24: 图片配置「测试连接」改用表单中实际的 `size/quality`，不再强行降级为 1024x1024/low
+- M25: OnboardingWizard 第 1 步明确列出 LLM（必需）/ Embedding（可选）/ 图片（可选）三类配置及跳过后果
+
+**Shell（M26–M35）**
+- M26: 移除 `window.__nwFeedback`/`__nwTasks` 桥接；`api/client.ts` 直接 `import` 两个 store（已确认无循环依赖），HMR 后不再丢失反馈
+- M27: 新增 `stores/confirm.ts` + `<ConfirmDialog />` 组件；全项目 29 处 `confirm()` 替换为 Promise 风格 `confirmDialog()`
+- M28: `bottomLinks` 根据 `ui.isBeginner` 动态派生（新手 3 项 / 高级 4 项）
+- M29: 移动端 topbar 搜索按钮改为放大镜图标（`AppIcon` 新增 `search`）
+- M30: OnboardingWizard "进入工作台" 按钮 disabled 时旁边显示「还需：xxx」徽标
+- M31: 删除从未引用的 `composables/useAutoSelect.ts`（53 行死代码）
+- M32: feedback store 加入 5 秒内同文消息聚合（显示 `×N` 计数）；FeedbackCenter 新增「清除全部」按钮
+- M33: generate store 新增 `invalidateForPath(path)`；FilesView 保存被追踪的 `Novel_architecture.txt` 等文件后自动刷新生成缓存
+- M34: LogsView `detectModule` 优先解析 `[logger.name]` 格式，中文日志不再全部归为 system
+- M35: LogsView 错误提示中的「模型配置」改为可点击按钮，`router.push('/config')`
+
+### Deferred — 架构级问题
+以下 P1 项涉及更大范围的重构或数据迁移，未在本次打磨内解决，待后续 A 类（架构）专项处理：
+- M17: StylesView 1060 行 author reference 面板拆分
+- M18: PresetsView 与 InstructionConfigView 模板编辑代码重叠
+- M19: `xp_presets/` 与 `prompts/` 命名冲突 — 需数据迁移
+- M22: ProfileView 与 xp_presets 数据模型耦合
+
 ## [2.1.2] - 2026-05-21
 
 ### Polish — P2 审计打磨 (28 项轻量优化)

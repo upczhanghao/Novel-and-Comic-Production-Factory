@@ -7,23 +7,18 @@ import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import FeedbackCenter from '@/components/FeedbackCenter.vue'
 import TaskBar from '@/components/TaskBar.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useUIStore } from '@/stores/ui'
 import { useFeedbackStore } from '@/stores/feedback'
-import { useTasksStore } from '@/stores/tasks'
 import { useProjectStore } from '@/stores/project'
 
 const route = useRoute()
 const ui = useUIStore()
 const feedback = useFeedbackStore()
-const tasks = useTasksStore()
 const projectStore = useProjectStore()
 const mobileMenuOpen = ref(false)
 const showOnboarding = ref(false)
 const collapsedGroups = ref<Record<string, boolean>>({})
-
-// 暴露 store 给 api/client.ts 的 postSSETracked
-;(window as unknown as Record<string, unknown>).__nwFeedback = feedback
-;(window as unknown as Record<string, unknown>).__nwTasks = tasks
 
 onMounted(() => {
   if (!ui.onboardingDone) showOnboarding.value = true
@@ -54,7 +49,11 @@ const navGroups = computed(() => [
   { key: 'system', title: '系统', items: navLinks.value.filter((link) => ['/config', '/consistency', '/files', '/logs'].includes(link.to)) },
 ].filter((g) => g.items.length > 0))
 
-const bottomLinks = computed(() => navLinks.value.filter((link) => ['/', '/manju', '/images', '/styles'].includes(link.to)))
+const bottomLinks = computed(() => {
+  // M28: 根据 level 派生底部导航；新手只有创作工坊+漫剧+图片，高级再加文风
+  const wanted = ui.isBeginner ? ['/', '/manju', '/images'] : ['/', '/manju', '/images', '/styles']
+  return navLinks.value.filter((link) => wanted.includes(link.to))
+})
 const currentNav = computed(() => allNavLinks.find((link) => link.to === route.path) ?? allNavLinks[0])
 
 function toggleGroup(key: string) {
@@ -125,7 +124,7 @@ function openSearch() {
           <div class="text-[10px] uppercase tracking-[0.18em] text-[var(--color-ink-light)]">NovelWriter</div>
         </div>
         <button class="mobile-search-btn" @click="openSearch" type="button" aria-label="搜索">
-          <AppIcon name="presets" size="18" />
+          <AppIcon name="search" size="18" />
         </button>
         <button class="mobile-menu-button" @click="mobileMenuOpen = !mobileMenuOpen" type="button" aria-label="打开菜单">
           <AppIcon :name="mobileMenuOpen ? 'close' : 'menu'" size="20" />
@@ -206,6 +205,7 @@ function openSearch() {
     <FeedbackCenter />
     <TaskBar />
     <CommandPalette />
+    <ConfirmDialog />
   </div>
 </template>
 
