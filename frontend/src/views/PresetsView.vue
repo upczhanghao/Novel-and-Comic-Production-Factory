@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { presetsApi } from '@/api/client'
 import { useFeedbackStore } from '@/stores/feedback'
 import { confirmDialog } from '@/stores/confirm'
+import { usePromptTemplateEditor, type PromptTemplateAdapter } from '@/composables/usePromptTemplateEditor'
 
 interface PromptMeta { category: string; tags: string[]; description: string }
 interface CategoryInfo { label: string; description: string; order: number }
@@ -22,8 +23,6 @@ const activePreset = ref('')
 const activeDesc = ref('')
 
 const promptData = ref<PromptData>({ prompts: {}, defaults: {}, keys: [], display_names: {}, meta: {}, categories: {} })
-const selectedKey = ref('')
-const promptContent = ref('')
 
 const newPresetName = ref('')
 const newPresetDesc = ref('')
@@ -33,6 +32,26 @@ const categoryFilter = ref('all')
 const tagFilter = ref<string>('')
 const showDiff = ref(false)
 const showOnlyCustom = ref(false)
+
+const adapter = ref<PromptTemplateAdapter | null>({
+  save: async (key, content) => {
+    const r = await presetsApi.updatePrompt(key, content)
+    return r.data
+  },
+  reset: async (key) => {
+    const r = await presetsApi.resetPrompt(key)
+    return r.data
+  },
+})
+
+const editor = usePromptTemplateEditor({
+  savedContent: () => promptData.value.prompts[editor.selectedKey.value] ?? '',
+  defaultContent: () => promptData.value.defaults[editor.selectedKey.value] ?? '',
+  classPrefix: 'pv',
+  adapter,
+})
+const { selectedKey, editorContent, hasChanges, usedVariables, defaultVariables,
+  missingVariables, extraVariables, previewHtml, defaultHtml } = editor
 
 async function loadAll() {
   const res = await presetsApi.list()
@@ -44,7 +63,7 @@ async function loadAll() {
   if (!selectedKey.value && promptData.value.keys.length) {
     selectedKey.value = promptData.value.keys[0]
   }
-  loadPrompt(selectedKey.value)
+  editor.syncFromSaved()
 }
 
 async function activate(name: string) {
@@ -58,12 +77,6 @@ async function activate(name: string) {
     feedback.error('方案切换失败', (e as Error).message)
   }
 }
-
-function loadPrompt(key: string) {
-  promptContent.value = promptData.value.prompts[key] ?? ''
-}
-
-watch(selectedKey, loadPrompt)
 
 const orderedCategories = computed(() => {
   const entries = Object.entries(promptData.value.categories || {})
@@ -134,69 +147,22 @@ const groupedRows = computed(() => {
 })
 
 const selectedRow = computed(() => allRows.value.find((r) => r.key === selectedKey.value) ?? null)
-const selectedDefault = computed(() => promptData.value.defaults[selectedKey.value] ?? '')
-const hasChanges = computed(() => promptContent.value !== (promptData.value.prompts[selectedKey.value] ?? ''))
 const isCustomized = computed(() => selectedRow.value?.customized ?? false)
 
-const VARIABLE_RE = /\{([a-zA-Z_][\w]*)\}/g
-function extractVariables(text: string): string[] {
-  const set = new Set<string>()
-  let m: RegExpExecArray | null
-  while ((m = VARIABLE_RE.exec(text)) !== null) set.add(m[1])
-  return Array.from(set).sort()
-}
-const editorVariables = computed(() => extractVariables(promptContent.value))
-const defaultVariables = computed(() => extractVariables(selectedDefault.value))
-const missingVariables = computed(() => defaultVariables.value.filter((v) => !editorVariables.value.includes(v)))
-const extraVariables = computed(() => editorVariables.value.filter((v) => !defaultVariables.value.includes(v)))
-
-function highlightedHtml(text: string): string {
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  return escaped.replace(/\{([a-zA-Z_][\w]*)\}/g, '<span class="pv-var">{$1}</span>')
-}
-const previewHtml = computed(() => highlightedHtml(promptContent.value))
-const defaultHtml = computed(() => highlightedHtml(selectedDefault.value))
+const editorVariables = usedVariables
 
 async function savePrompt() {
-  if (!selectedKey.value) return
-  try {
-    const res = await presetsApi.updatePrompt(selectedKey.value, promptContent.value)
-    feedback.success(res.data.message ?? '已保存')
-    await loadAll()
-  } catch (e: unknown) {
-    feedback.error('保存失败', (e as Error).message)
-  }
+  if (await editor.save()) await loadAll()
 }
 
 async function resetPrompt() {
-  if (!selectedKey.value) return
-  if (!(await confirmDialog(`确认重置「${selectedRow.value?.title || selectedKey.value}」为默认内容？此操作不可撤销。`))) return
-  try {
-    const res = await presetsApi.resetPrompt(selectedKey.value)
-    promptContent.value = res.data.content
-    feedback.success(res.data.message ?? '已恢复默认')
-    await loadAll()
-  } catch (e: unknown) {
-    feedback.error('重置失败', (e as Error).message)
-  }
+  const title = selectedRow.value?.title || selectedKey.value
+  if (await editor.reset(`确认重置「${title}」为默认内容？此操作不可撤销。`)) await loadAll()
 }
 
-async function copyPrompt() {
-  try {
-    await navigator.clipboard.writeText(promptContent.value)
-    feedback.info('已复制提示词到剪贴板')
-  } catch {
-    feedback.warning('无法访问剪贴板')
-  }
-}
-
-function applyDefaultToEditor() {
-  promptContent.value = selectedDefault.value
-  feedback.info('已加载默认内容到编辑器，需点击「保存到当前方案」才会生效')
-}
+const copyPrompt = () => editor.copy()
+const applyDefaultToEditor = () =>
+  editor.applyDefault('已加载默认内容到编辑器，需点击「保存到当前方案」才会生效')
 
 async function saveAsNew() {
   if (!newPresetName.value.trim()) return
@@ -344,7 +310,7 @@ onMounted(loadAll)
         <div v-if="selectedRow" class="pv-editor-wrap">
           <div v-if="!showDiff">
             <textarea
-              v-model="promptContent"
+              v-model="editorContent"
               rows="20"
               class="pv-editor"
               placeholder="编辑提示词…"

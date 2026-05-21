@@ -6,6 +6,7 @@ import { useProjectStore } from '@/stores/project'
 import { useFeedbackStore } from '@/stores/feedback'
 import { confirmDialog } from '@/stores/confirm'
 import StreamOutput from '@/components/StreamOutput.vue'
+import { useLibrary, fmtBytes, type LibraryAdapter } from '@/composables/useLibrary'
 
 const configStore = useConfigStore()
 const projectStore = useProjectStore()
@@ -69,46 +70,37 @@ const mergeState = ref({ running: false, progress: '', result: '', error: '' })
 const unlock = ref(false)
 
 const authorRefFiles = ref<File[]>([])
-const authorRefImporting = ref(false)
 const authorRefStatus = ref<Record<string, boolean>>({})
 const authorRefEmbConfig = ref('')
 const authorRefImportTags = ref('')
-const authorRefRebuilding = ref(false)
 
-interface AuthorRefRecord {
-  file_id: string
-  filename: string
-  tags: string[]
-  author?: string
-  size_bytes: number
-  chunks: number
-  imported_at: string
-  status: 'ok' | 'indexing' | 'error'
-  error?: string
-}
-interface AuthorRefStats {
-  exists: boolean
-  file_count: number
-  manifest_chunks: number
-  vector_count: number | null
-  error_count: number
-  indexing_count: number
-  orphan_warning: string
-}
-interface AuthorRefHit {
-  file_id: string
-  filename: string
-  chunk_idx: number
-  score: number
-  snippet: string
-}
-
-const authorRefList = ref<AuthorRefRecord[]>([])
-const authorRefStatsData = ref<AuthorRefStats | null>(null)
+// A7: 作者参考库走通用 useLibrary 组合式
+const authorRefAdapter = computed<LibraryAdapter | null>(() => {
+  const name = selectedStyle.value
+  if (!name) return null
+  return {
+    files: () => stylesApi.authorRefFiles(name).then((r) => r.data),
+    stats: (eb: string) => stylesApi.authorRefStats(name, eb).then((r) => r.data),
+    import: (fd: FormData) => stylesApi.importAuthorRef(name, fd).then((r) => r.data),
+    deleteFile: (id: string, eb: string) => stylesApi.deleteAuthorRefFile(name, id, eb),
+    search: (q: string, eb: string, k: number, id?: string) => stylesApi.searchAuthorRef(name, q, eb, k, id).then((r) => r.data),
+    source: (id: string) => stylesApi.authorRefSource(name, id).then((r) => r.data),
+    rebuild: (eb: string) => stylesApi.rebuildAuthorRef(name, eb).then((r) => r.data),
+    clear: () => stylesApi.clearAuthorRef(name),
+    updateFile: (id: string, data) => stylesApi.updateAuthorRefFile(name, id, data),
+  }
+})
+const authorLib = useLibrary(authorRefAdapter)
+const {
+  files: authorRefList,
+  stats: authorRefStatsData,
+  importing: authorRefImporting,
+  rebuilding: authorRefRebuilding,
+  searching: authorRefSearching,
+  hits: authorRefHits,
+  sourcePreview: authorRefSourcePreview,
+} = authorLib
 const authorRefQuery = ref('')
-const authorRefSearching = ref(false)
-const authorRefHits = ref<AuthorRefHit[]>([])
-const authorRefSourcePreview = ref<{ filename: string; text: string } | null>(null)
 
 function onAuthorRefFile(e: Event) {
   const files = (e.target as HTMLInputElement).files
@@ -129,35 +121,15 @@ async function loadAuthorRefDetail(name: string) {
     authorRefStatsData.value = null
     return
   }
-  try {
-    const [fRes, sRes] = await Promise.all([
-      stylesApi.authorRefFiles(name),
-      stylesApi.authorRefStats(name, authorRefEmbConfig.value),
-    ])
-    authorRefList.value = fRes.data.files || []
-    authorRefStatsData.value = sRes.data
-    authorRefStatus.value[name] = (sRes.data.file_count || 0) > 0
-  } catch (e: unknown) {
-    authorRefList.value = []
-    authorRefStatsData.value = null
-  }
+  await authorLib.load(authorRefEmbConfig.value, { silent: true })
+  authorRefStatus.value[name] = (authorRefStatsData.value?.file_count || 0) > 0
 }
 
 async function importAuthorRef() {
   if (!selectedStyle.value || !authorRefFiles.value.length || !authorRefEmbConfig.value) return
-  authorRefImporting.value = true
-  let success = 0, failed = 0
-  for (const file of authorRefFiles.value) {
-    try {
-      const fd = new FormData()
-      fd.append('emb_config_name', authorRefEmbConfig.value)
-      fd.append('file', file)
-      if (authorRefImportTags.value.trim()) fd.append('tags', authorRefImportTags.value.trim())
-      await stylesApi.importAuthorRef(selectedStyle.value, fd)
-      success++
-    } catch { failed++ }
-  }
-  authorRefImporting.value = false
+  const { success, failed } = await authorLib.importFiles(
+    authorRefFiles.value, authorRefEmbConfig.value, authorRefImportTags.value, () => {},
+  )
   if (failed) feedback.warning(`参考库导入完成：${success} 成功 / ${failed} 失败`)
   else feedback.success(`✅ 参考库 ${success} 个文件全部导入`)
   authorRefFiles.value = []
@@ -165,19 +137,13 @@ async function importAuthorRef() {
   await loadAuthorRefDetail(selectedStyle.value)
 }
 
-async function deleteAuthorRefFile(rec: AuthorRefRecord) {
+async function deleteAuthorRefFile(rec: import('@/composables/useLibrary').LibraryFileRecord) {
   if (!selectedStyle.value) return
-  if (!(await confirmDialog(`确认删除「${rec.filename}」？`))) return
-  try {
-    await stylesApi.deleteAuthorRefFile(selectedStyle.value, rec.file_id, authorRefEmbConfig.value)
-    feedback.success(`已删除「${rec.filename}」`)
-    await loadAuthorRefDetail(selectedStyle.value)
-  } catch (e: unknown) {
-    feedback.error('删除失败', (e as Error).message)
-  }
+  const ok = await authorLib.deleteFile(rec, authorRefEmbConfig.value)
+  if (ok) await loadAuthorRefDetail(selectedStyle.value)
 }
 
-async function renameAuthorRefFile(rec: AuthorRefRecord) {
+async function renameAuthorRefFile(rec: import('@/composables/useLibrary').LibraryFileRecord) {
   if (!selectedStyle.value) return
   const next = window.prompt('新文件名', rec.filename)
   if (!next || next === rec.filename) return
@@ -190,76 +156,31 @@ async function renameAuthorRefFile(rec: AuthorRefRecord) {
   }
 }
 
-async function viewAuthorRefSource(rec: AuthorRefRecord) {
-  if (!selectedStyle.value) return
-  try {
-    const res = await stylesApi.authorRefSource(selectedStyle.value, rec.file_id)
-    authorRefSourcePreview.value = { filename: rec.filename, text: res.data.text }
-  } catch (e: unknown) {
-    feedback.error('读取原文失败', (e as Error).message)
-  }
+function viewAuthorRefSource(rec: import('@/composables/useLibrary').LibraryFileRecord) {
+  authorLib.viewSource(rec)
 }
 
 async function searchAuthorRef() {
-  if (!selectedStyle.value || !authorRefQuery.value.trim()) return
-  if (!authorRefEmbConfig.value) {
-    feedback.warning('请先选择 Embedding')
-    return
-  }
-  authorRefSearching.value = true
-  authorRefHits.value = []
-  try {
-    const res = await stylesApi.searchAuthorRef(
-      selectedStyle.value,
-      authorRefQuery.value.trim(),
-      authorRefEmbConfig.value,
-      6,
-    )
-    authorRefHits.value = res.data.hits || []
-    if (!authorRefHits.value.length) feedback.info('没有命中任何片段')
-  } catch (e: unknown) {
-    feedback.error('检索失败', (e as Error).message)
-  } finally {
-    authorRefSearching.value = false
-  }
+  if (!selectedStyle.value) return
+  await authorLib.search(authorRefQuery.value, authorRefEmbConfig.value)
 }
 
 async function rebuildAuthorRef() {
   if (!selectedStyle.value) return
-  if (!authorRefEmbConfig.value) {
-    feedback.warning('请先选择 Embedding')
-    return
-  }
-  if (!(await confirmDialog('确认重建作者参考库索引？将基于已保存源文件重新嵌入。'))) return
-  authorRefRebuilding.value = true
-  try {
-    const res = await stylesApi.rebuildAuthorRef(selectedStyle.value, authorRefEmbConfig.value)
-    feedback.success(res.data.message)
-    await loadAuthorRefDetail(selectedStyle.value)
-  } catch (e: unknown) {
-    feedback.error('重建失败', (e as Error).message)
-  } finally {
-    authorRefRebuilding.value = false
-  }
+  const ok = await authorLib.rebuild(authorRefEmbConfig.value, '确认重建作者参考库索引？将基于已保存源文件重新嵌入。')
+  if (ok) await loadAuthorRefDetail(selectedStyle.value)
 }
 
 async function clearAuthorRef() {
   if (!selectedStyle.value) return
-  if (!(await confirmDialog(`确认清空文风「${selectedStyle.value}」的作者参考库？将删除全部源文件与向量。`))) return
-  try {
-    await stylesApi.clearAuthorRef(selectedStyle.value)
+  const ok = await authorLib.clearAll(`确认清空文风「${selectedStyle.value}」的作者参考库？将删除全部源文件与向量。`)
+  if (ok) {
     authorRefStatus.value[selectedStyle.value] = false
-    feedback.success('✅ 已清空参考库')
     await loadAuthorRefDetail(selectedStyle.value)
-  } catch (e) { feedback.error('清空失败', (e as Error).message) }
+  }
 }
 
-function fmtAuthorRefBytes(n: number): string {
-  if (!n) return '0 B'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / 1024 / 1024).toFixed(2)} MB`
-}
+const fmtAuthorRefBytes = fmtBytes
 
 async function loadStyles() {
   const res = await stylesApi.list()

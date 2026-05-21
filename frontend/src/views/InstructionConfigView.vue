@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { configApi } from '@/api/client'
 import { useFeedbackStore } from '@/stores/feedback'
-import { confirmDialog } from '@/stores/confirm'
+import { usePromptTemplateEditor, type PromptTemplateAdapter } from '@/composables/usePromptTemplateEditor'
 
 // M23: 只有从 /manju 跳转过来时才显示返回按钮
 const cameFromManju = ref(false)
@@ -21,18 +21,41 @@ const feedback = useFeedbackStore()
 
 const templates = ref<Record<string, InstructionTemplate>>({})
 const defaults = ref<Record<string, string>>({})
-const selectedKey = ref('')
-const editorContent = ref('')
 const loading = ref(false)
-const saving = ref(false)
 
 const search = ref('')
 const showOnlyCustom = ref(false)
 const showDiff = ref(false)
 
+const adapter = ref<PromptTemplateAdapter | null>({
+  save: async (key, content) => {
+    const r = await configApi.saveManjuInstruction(key, content)
+    templates.value = r.data.templates ?? templates.value
+    return { message: r.data.message, content: templates.value[key]?.content }
+  },
+  reset: async (key) => {
+    const r = await configApi.resetManjuInstruction(key)
+    templates.value = r.data.templates ?? templates.value
+    return { message: r.data.message, content: r.data.content ?? templates.value[key]?.content }
+  },
+})
+
+const editor = usePromptTemplateEditor({
+  savedContent: () => templates.value[editor.selectedKey.value]?.content ?? '',
+  defaultContent: () => defaults.value[editor.selectedKey.value] ?? '',
+  expectedVariables: () => templates.value[editor.selectedKey.value]?.variables ?? [],
+  classPrefix: 'ic',
+  adapter,
+})
+const {
+  selectedKey, editorContent, saving, hasChanges,
+  usedVariables, missingVariables, extraVariables: unknownVariables,
+  previewHtml, defaultHtml: defaultPreviewHtml,
+} = editor
+
 const orderedTemplates = computed(() => Object.values(templates.value))
 const selectedTemplate = computed(() => templates.value[selectedKey.value])
-const hasChanges = computed(() => Boolean(selectedTemplate.value && editorContent.value !== selectedTemplate.value.content))
+const expectedVariables = computed(() => selectedTemplate.value?.variables ?? [])
 
 const filtered = computed(() => {
   const kw = search.value.trim().toLowerCase()
@@ -62,7 +85,7 @@ async function loadTemplates() {
     if (!selectedKey.value || !templates.value[selectedKey.value]) {
       selectedKey.value = orderedTemplates.value[0]?.key ?? ''
     }
-    editorContent.value = selectedTemplate.value?.content ?? ''
+    editor.syncFromSaved()
   } catch (e: unknown) {
     feedback.error('加载指令模板失败', (e as Error).message)
   } finally {
@@ -72,88 +95,19 @@ async function loadTemplates() {
 
 function selectTemplate(key: string) {
   selectedKey.value = key
-  editorContent.value = templates.value[key]?.content ?? ''
 }
 
-async function saveTemplate() {
+const saveTemplate = () => editor.save()
+const resetTemplate = async () => {
   if (!selectedTemplate.value) return
-  saving.value = true
-  try {
-    const res = await configApi.saveManjuInstruction(selectedKey.value, editorContent.value)
-    templates.value = res.data.templates ?? templates.value
-    editorContent.value = templates.value[selectedKey.value]?.content ?? editorContent.value
-    feedback.success(res.data.message ?? '已保存')
-  } catch (e: unknown) {
-    feedback.error('保存失败', (e as Error).message)
-  } finally {
-    saving.value = false
-  }
+  await editor.reset(`确认将「${selectedTemplate.value.title}」恢复为默认？`)
 }
-
-async function resetTemplate() {
-  if (!selectedTemplate.value) return
-  if (!(await confirmDialog(`确认将「${selectedTemplate.value.title}」恢复为默认？`))) return
-  saving.value = true
-  try {
-    const res = await configApi.resetManjuInstruction(selectedKey.value)
-    templates.value = res.data.templates ?? templates.value
-    editorContent.value = res.data.content ?? templates.value[selectedKey.value]?.content ?? ''
-    feedback.success(res.data.message ?? '已恢复默认')
-  } catch (e: unknown) {
-    feedback.error('重置失败', (e as Error).message)
-  } finally {
-    saving.value = false
-  }
+const copyContent = () => editor.copy()
+const applyDefaultToEditor = () => {
+  if (!defaults.value[selectedKey.value]) return
+  editor.applyDefault('已加载默认内容，需点击「保存模板」才会生效')
 }
-
-async function copyContent() {
-  try {
-    await navigator.clipboard.writeText(editorContent.value)
-    feedback.info('已复制指令到剪贴板')
-  } catch {
-    feedback.warning('无法访问剪贴板')
-  }
-}
-
-function applyDefaultToEditor() {
-  if (!selectedTemplate.value) return
-  const def = defaults.value[selectedKey.value]
-  if (def != null) {
-    editorContent.value = def
-    feedback.info('已加载默认内容，需点击「保存模板」才会生效')
-  }
-}
-
-// 变量分析
-const VARIABLE_RE = /\{([a-zA-Z_][\w]*)\}/g
-function extractVariables(text: string): string[] {
-  const set = new Set<string>()
-  let m: RegExpExecArray | null
-  while ((m = VARIABLE_RE.exec(text)) !== null) set.add(m[1])
-  return Array.from(set).sort()
-}
-
-const expectedVariables = computed(() => selectedTemplate.value?.variables ?? [])
-const usedVariables = computed(() => extractVariables(editorContent.value))
-const missingVariables = computed(() => expectedVariables.value.filter((v) => !usedVariables.value.includes(v)))
-const unknownVariables = computed(() => usedVariables.value.filter((v) => !expectedVariables.value.includes(v)))
-
-function highlightedHtml(text: string, expected: string[]): string {
-  const ok = new Set(expected)
-  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return escaped.replace(/\{([a-zA-Z_][\w]*)\}/g, (_, name) => {
-    const cls = ok.has(name) ? 'ic-var ok' : 'ic-var unknown'
-    return `<span class="${cls}">{${name}}</span>`
-  })
-}
-const previewHtml = computed(() => highlightedHtml(editorContent.value, expectedVariables.value))
-const defaultPreviewHtml = computed(() =>
-  highlightedHtml(defaults.value[selectedKey.value] ?? '', expectedVariables.value)
-)
-
-function insertVariable(name: string) {
-  editorContent.value = (editorContent.value || '') + `{${name}}`
-}
+const insertVariable = (name: string) => editor.insertVariable(name)
 
 onMounted(() => {
   // 通过 referrer 简单判断来源；不能保证 100%，仅用于决定是否显示返回按钮

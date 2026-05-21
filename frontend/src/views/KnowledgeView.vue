@@ -5,38 +5,11 @@ import { useConfigStore } from '@/stores/config'
 import { useProjectStore } from '@/stores/project'
 import { useFeedbackStore } from '@/stores/feedback'
 import { confirmDialog } from '@/stores/confirm'
+import { useLibrary, fmtBytes, type LibraryAdapter, type LibraryFileRecord } from '@/composables/useLibrary'
 
-interface FileRecord {
-  file_id: string
-  filename: string
+interface FileRecord extends LibraryFileRecord {
   original_filename?: string
-  tags: string[]
-  author?: string
-  size_bytes: number
   char_count: number
-  chunks: number
-  imported_at: string
-  status: 'ok' | 'indexing' | 'error'
-  error?: string
-}
-
-interface SearchHit {
-  file_id: string
-  filename: string
-  chunk_idx: number
-  score: number
-  snippet: string
-}
-
-interface Stats {
-  exists: boolean
-  file_count: number
-  manifest_chunks: number
-  vector_count: number | null
-  error_count: number
-  indexing_count: number
-  orphan_warning: string
-  store_dir: string
 }
 
 const configStore = useConfigStore()
@@ -44,11 +17,26 @@ const projectStore = useProjectStore()
 const feedback = useFeedbackStore()
 
 const embConfig = ref('')
-const files = ref<FileRecord[]>([])
-const stats = ref<Stats | null>(null)
-const loading = ref(false)
-const importing = ref(false)
-const rebuilding = ref(false)
+
+const adapter = computed<LibraryAdapter | null>(() => {
+  const fp = projectStore.filepath
+  if (!fp) return null
+  return {
+    files: () => knowledgeApi.files(fp).then((r) => r.data),
+    stats: (eb: string) => knowledgeApi.stats(fp, eb).then((r) => r.data),
+    import: (fd: FormData) => { fd.append('filepath', fp); return knowledgeApi.import(fd).then((r) => r.data) },
+    deleteFile: (id: string, eb: string) => knowledgeApi.deleteFile(id, fp, eb),
+    search: (q: string, eb: string, k: number, id?: string) => knowledgeApi.search(fp, q, eb, k, id).then((r) => r.data),
+    source: (id: string) => knowledgeApi.source(id, fp).then((r) => r.data),
+    rebuild: (eb: string) => knowledgeApi.rebuild(fp, eb).then((r) => r.data),
+    clear: () => knowledgeApi.clear(fp),
+    updateFile: (id: string, data) => knowledgeApi.updateFile(id, fp, data),
+    replaceFile: (id: string, fd: FormData) => knowledgeApi.replaceFile(id, fd).then((r) => r.data),
+  }
+})
+
+const lib = useLibrary(adapter)
+const { files: libFiles, stats, loading, importing, rebuilding, searching, hits, sourcePreview } = lib
 
 // 导入
 const importTags = ref('')
@@ -61,11 +49,6 @@ const searchKeyword = ref('')
 // 检索
 const queryText = ref('')
 const queryFileId = ref('')
-const searching = ref(false)
-const hits = ref<SearchHit[]>([])
-
-// 查看原文
-const sourcePreview = ref<{ filename: string; text: string } | null>(null)
 
 // 编辑文件
 const editing = ref<FileRecord | null>(null)
@@ -80,13 +63,13 @@ const hasProject = computed(() => !!projectStore.filepath)
 
 const allTags = computed(() => {
   const set = new Set<string>()
-  files.value.forEach((f) => (f.tags || []).forEach((t) => set.add(t)))
+  lib.files.value.forEach((f) => (f.tags || []).forEach((t) => set.add(t)))
   return Array.from(set).sort()
 })
 
 const filteredFiles = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase()
-  return files.value.filter((f) => {
+  return (lib.files.value as FileRecord[]).filter((f) => {
     if (filterTag.value && !(f.tags || []).includes(filterTag.value)) return false
     if (kw && !(f.filename || '').toLowerCase().includes(kw) && !(f.author || '').toLowerCase().includes(kw)) return false
     return true
@@ -96,60 +79,25 @@ const filteredFiles = computed(() => {
 // ── 数据加载 ──────────────────────────────────────────────────────────────
 async function loadAll() {
   if (!hasProject.value) return
-  loading.value = true
-  try {
-    const [fRes, sRes] = await Promise.all([
-      knowledgeApi.files(projectStore.filepath),
-      knowledgeApi.stats(projectStore.filepath, embConfig.value),
-    ])
-    files.value = fRes.data.files || []
-    stats.value = sRes.data
-  } catch (e: unknown) {
-    feedback.error('加载知识库失败', (e as Error).message)
-  } finally {
-    loading.value = false
-  }
+  await lib.load(embConfig.value)
 }
 
 // ── 操作 ──────────────────────────────────────────────────────────────────
 async function importFile() {
   const file = importFileInput.value?.files?.[0]
-  if (!file) {
-    feedback.warning('请先选择文件')
-    return
-  }
-  if (!hasEmbedding.value) {
-    feedback.warning('请先在「配置 → Embedding」中创建并选择 Embedding')
-    return
-  }
-  importing.value = true
-  try {
-    const fd = new FormData()
-    fd.append('emb_config_name', embConfig.value)
-    fd.append('filepath', projectStore.filepath)
-    fd.append('file', file)
-    if (importTags.value.trim()) fd.append('tags', importTags.value.trim())
-    const res = await knowledgeApi.import(fd)
-    feedback.success(res.data.message || '导入完成')
-    if (importFileInput.value) importFileInput.value.value = ''
-    importTags.value = ''
-    await loadAll()
-  } catch (e: unknown) {
-    feedback.error('导入失败', (e as Error).message)
-  } finally {
-    importing.value = false
-  }
+  if (!file) { feedback.warning('请先选择文件'); return }
+  if (!hasEmbedding.value) { feedback.warning('请先在「配置 → Embedding」中创建并选择 Embedding'); return }
+  const { success, failed } = await lib.importFiles([file], embConfig.value, importTags.value, () => {})
+  if (failed) feedback.error('导入失败')
+  else feedback.success(`已导入 ${success} 个文件`)
+  if (importFileInput.value) importFileInput.value.value = ''
+  importTags.value = ''
+  await loadAll()
 }
 
 async function deleteFile(rec: FileRecord) {
-  if (!(await confirmDialog(`确认删除「${rec.filename}」？该操作会从向量库中精确移除该文件的所有片段。`))) return
-  try {
-    await knowledgeApi.deleteFile(rec.file_id, projectStore.filepath, embConfig.value)
-    feedback.success(`已删除「${rec.filename}」`)
-    await loadAll()
-  } catch (e: unknown) {
-    feedback.error('删除失败', (e as Error).message)
-  }
+  const ok = await lib.deleteFile(rec, embConfig.value, `确认删除「${rec.filename}」？该操作会从向量库中精确移除该文件的所有片段。`)
+  if (ok) await loadAll()
 }
 
 function openEdit(rec: FileRecord) {
@@ -162,10 +110,10 @@ function openEdit(rec: FileRecord) {
 }
 
 async function saveEdit() {
-  if (!editing.value) return
+  if (!editing.value || !adapter.value?.updateFile) return
   const target = editing.value
   try {
-    await knowledgeApi.updateFile(target.file_id, projectStore.filepath, {
+    await adapter.value.updateFile(target.file_id, {
       filename: editForm.value.filename || target.filename,
       tags: editForm.value.tags.split(',').map((s) => s.trim()).filter(Boolean),
       author: editForm.value.author,
@@ -178,14 +126,7 @@ async function saveEdit() {
   }
 }
 
-async function viewSource(rec: FileRecord) {
-  try {
-    const res = await knowledgeApi.source(rec.file_id, projectStore.filepath)
-    sourcePreview.value = { filename: rec.filename, text: res.data.text }
-  } catch (e: unknown) {
-    feedback.error('读取原文失败', (e as Error).message)
-  }
-}
+function viewSource(rec: FileRecord) { lib.viewSource(rec) }
 
 function triggerReplace(rec: FileRecord) {
   replacingId.value = rec.file_id
@@ -195,7 +136,7 @@ function triggerReplace(rec: FileRecord) {
 
 async function onReplaceFile(e: Event, rec: FileRecord) {
   const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
+  if (!file || !adapter.value?.replaceFile) return
   if (!(await confirmDialog(`确认用「${file.name}」替换「${rec.filename}」？旧向量将被删除并重新嵌入。`))) {
     (e.target as HTMLInputElement).value = ''
     return
@@ -205,8 +146,8 @@ async function onReplaceFile(e: Event, rec: FileRecord) {
     fd.append('filepath', projectStore.filepath)
     fd.append('emb_config_name', embConfig.value)
     fd.append('file', file)
-    const res = await knowledgeApi.replaceFile(rec.file_id, fd)
-    feedback.success(res.data.message || '已替换')
+    const res = await adapter.value.replaceFile(rec.file_id, fd)
+    feedback.success(res.message || '已替换')
     await loadAll()
   } catch (err: unknown) {
     feedback.error('替换失败', (err as Error).message)
@@ -217,67 +158,22 @@ async function onReplaceFile(e: Event, rec: FileRecord) {
 }
 
 async function doSearch() {
-  if (!queryText.value.trim()) return
-  if (!hasEmbedding.value) {
-    feedback.warning('请先选择 Embedding 配置')
-    return
-  }
-  searching.value = true
-  hits.value = []
-  try {
-    const res = await knowledgeApi.search(
-      projectStore.filepath,
-      queryText.value.trim(),
-      embConfig.value,
-      6,
-      queryFileId.value || undefined,
-    )
-    hits.value = res.data.hits || []
-    if (!hits.value.length) feedback.info('没有命中任何片段')
-  } catch (e: unknown) {
-    feedback.error('检索失败', (e as Error).message)
-  } finally {
-    searching.value = false
-  }
+  if (!hasEmbedding.value) { feedback.warning('请先选择 Embedding 配置'); return }
+  await lib.search(queryText.value, embConfig.value, 6, queryFileId.value || undefined)
 }
 
 async function clearLibrary() {
-  if (!(await confirmDialog('确认清空整个知识库？该操作会删除所有源文件与向量。'))) return
-  try {
-    await knowledgeApi.clear(projectStore.filepath)
-    feedback.success('知识库已清空')
-    await loadAll()
-  } catch (e: unknown) {
-    feedback.error('清空失败', (e as Error).message)
-  }
+  const ok = await lib.clearAll('确认清空整个知识库？该操作会删除所有源文件与向量。')
+  if (ok) await loadAll()
 }
 
 async function rebuildLibrary() {
-  if (!hasEmbedding.value) {
-    feedback.warning('请先选择 Embedding 配置')
-    return
-  }
-  if (!(await confirmDialog('确认重建索引？将删除向量库后基于已保存源文件重新嵌入，可能需要数十秒到几分钟。'))) return
-  rebuilding.value = true
-  try {
-    const res = await knowledgeApi.rebuild(projectStore.filepath, embConfig.value)
-    feedback.success(res.data.message)
-    await loadAll()
-  } catch (e: unknown) {
-    feedback.error('重建失败', (e as Error).message)
-  } finally {
-    rebuilding.value = false
-  }
+  if (!hasEmbedding.value) { feedback.warning('请先选择 Embedding 配置'); return }
+  const ok = await lib.rebuild(embConfig.value, '确认重建索引？将删除向量库后基于已保存源文件重新嵌入，可能需要数十秒到几分钟。')
+  if (ok) await loadAll()
 }
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
-function fmtBytes(n: number): string {
-  if (!n) return '0 B'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / 1024 / 1024).toFixed(2)} MB`
-}
-
 function statusBadge(s: string) {
   if (s === 'ok') return { text: '已索引', cls: 'bg-green-100 text-green-800' }
   if (s === 'indexing') return { text: '索引中', cls: 'bg-amber-100 text-amber-800' }
@@ -292,10 +188,7 @@ onMounted(async () => {
 })
 
 watch(() => configStore.embeddingChoices.slice(), (choices) => {
-  if (!choices.length) {
-    embConfig.value = ''
-    return
-  }
+  if (!choices.length) { embConfig.value = ''; return }
   if (!embConfig.value || !choices.includes(embConfig.value)) {
     embConfig.value = choices[0]
   }
@@ -391,7 +284,7 @@ watch(() => projectStore.filepath, () => loadAll())
 
       <div v-if="loading" class="text-sm text-[var(--color-ink-light)] py-6 text-center">加载中…</div>
       <div v-else-if="!filteredFiles.length" class="text-sm text-[var(--color-ink-light)] py-6 text-center">
-        {{ files.length ? '没有匹配的文件' : '还没有文件，上传一个开始构建知识库' }}
+        {{ libFiles.length ? '没有匹配的文件' : '还没有文件，上传一个开始构建知识库' }}
       </div>
       <div v-else class="overflow-auto">
         <table class="w-full text-sm">
@@ -438,11 +331,11 @@ watch(() => projectStore.filepath, () => loadAll())
       </div>
 
       <div class="module-action-row pt-2 border-t border-[var(--color-parchment-darker)]">
-        <button @click="rebuildLibrary" :disabled="rebuilding || !hasEmbedding || !files.length"
+        <button @click="rebuildLibrary" :disabled="rebuilding || !hasEmbedding || !libFiles.length"
           class="px-3 py-1.5 rounded-md text-sm border border-[var(--color-parchment-darker)] hover:bg-[var(--color-parchment-light)] disabled:opacity-50" type="button">
           {{ rebuilding ? '重建中…' : '🔄 重建索引' }}
         </button>
-        <button @click="clearLibrary" :disabled="!files.length"
+        <button @click="clearLibrary" :disabled="!libFiles.length"
           class="px-3 py-1.5 rounded-md text-sm border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50" type="button">
           🗑️ 清空知识库
         </button>
@@ -458,7 +351,7 @@ watch(() => projectStore.filepath, () => loadAll())
           class="md:col-span-2 border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm w-full" />
         <select v-model="queryFileId" class="border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
           <option value="">所有文件</option>
-          <option v-for="f in files" :key="f.file_id" :value="f.file_id">{{ f.filename }}</option>
+          <option v-for="f in libFiles" :key="f.file_id" :value="f.file_id">{{ f.filename }}</option>
         </select>
       </div>
       <div class="module-action-row">
