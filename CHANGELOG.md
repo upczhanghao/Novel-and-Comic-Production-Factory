@@ -3,6 +3,39 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.2] - 2026-05-22
+
+### Performance — 后端性能优化（5 项）
+
+经过对 FastAPI 后端的同步 I/O / 扫描 / 向量库生命周期的系统审计，落地了以下不破坏 API 兼容的性能修复：
+
+- **SSE 线程池容量 4 → 16**（`api/sse_utils.py:15`）。所有 LLM 生成 / Embedding 测试 / 图片测试共用同一个 `ThreadPoolExecutor`，原值导致超过 4 个并发请求就开始排队。提到 16 后单机并发能力翻 4 倍，对单用户桌面级使用绰绰有余。
+- **prompt history 改尾读**（`api/routers/logs.py`）。原实现用 `deque(f, maxlen=N)` 按行遍历整个 jsonl 文件，文件膨胀到几十 MB 就会前端超时；新实现 `_tail_lines()` 用 `seek + read` 反向截取末尾字节窗口，无搜索时只读末尾 256 KB，有搜索时上限 8 MB。50 MB 文件实测：无搜索 37 ms，关键字搜索 1.4 s（旧版 5–15 s）。
+- **Chroma 向量库进程级缓存**（`novel_generator/vectorstore_utils.py` + `api/library_service.py`）。原实现每个章节生成 / 知识库检索都重新构造 `Chroma(...)`，sqlite 打开 + collection 加载约 100 ms。新增 `_store_cache: dict[(abs_dir, collection_name)] -> Chroma` 进程级字典，连续 N 章生成只加载一次。`clear_vector_store` / `clear_library` / `rebuild_library` 通过 `_invalidate_store_cache` / `_evict_store` 显式失效。
+- **Embedding adapter 缓存**：审计中确认 `embedding_adapters.py:298-349` 已实现，无需新增。
+- **`_save_projects` 原子写**：审计中确认已使用 `atomic_write_json`（tmp + rename），无需新增。
+
+### Changed — 文件管理脱离项目耦合
+
+`/files` 路由原本要求先激活项目才能打开，与「运行日志」「模型配置」等系统级模块的体验不一致。本版改为真正全局：
+
+- 后端 9 个 `/api/files*` 端点改用新增的 `resolve_files_root()`（`api/security.py`），filepath 为空时回落到工作区 `output/` 目录，`safe_join` 仍保留路径穿越防护。
+- 前端 `/files` 路由 meta 加 `requiresProject: false`，不再被项目守卫拦截。无项目时树第一层就是 `output/` 下的各项目目录，可直接进入查看。
+
+### UI Polish — 浅色侧边栏可读性修复
+
+v2.2.0 暗色 → 浅色侧边栏迁移留下的若干视觉回退一并修掉：
+
+- `.mode-toggle` / `.sidebar-search` / `ConfigHealthIndicator` 按钮在浅色背景上原本几乎看不到边框，统一改为白底 `#d4d4d8` 边框 + hover `--color-leather-light` + 焦点环。
+- `ProjectBar` 把「📁 路径 · 已同步 · 更新 X 分钟前」从 pb-main 内联挤压改为下方独立行，宽度变化时不再被「新建/发现/删除」按钮遮挡。
+- `studio-workspace` / `studio-content` 加 `overflow-x: hidden` + 子容器 `min-width: 0`，消除窄窗口下页面右侧需要横向滚动才能看到的问题。
+
+### Files
+- 后端：`api/sse_utils.py`、`api/routers/logs.py`、`api/routers/files.py`、`api/security.py`、`api/library_service.py`、`novel_generator/vectorstore_utils.py`、`api_server.py`（version bump）
+- 前端：`frontend/src/router/index.ts`、`frontend/src/App.vue`、`frontend/src/components/ProjectBar.vue`、`frontend/src/components/ConfigHealthIndicator.vue`、`frontend/src/styles/main.css`
+
+---
+
 ## [2.4.1] - 2026-05-21
 
 ### Fixed — `config.example.json` 与 `create_config()` 默认值同步

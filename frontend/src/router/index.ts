@@ -95,7 +95,7 @@ export const navRoutes: RouteRecordRaw[] = [
     path: '/files',
     name: 'files',
     component: () => import('@/views/FilesView.vue'),
-    meta: { title: '文件管理', icon: 'files', group: 'system', level: 'advanced' },
+    meta: { title: '文件管理', icon: 'files', group: 'system', level: 'advanced', requiresProject: false },
   },
   {
     path: '/logs',

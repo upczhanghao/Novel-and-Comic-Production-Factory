@@ -72,6 +72,18 @@ def normalize_project_path(path: str | os.PathLike[str] = "./output", *, allow_b
     return str(resolved)
 
 
+def resolve_files_root(path: str | os.PathLike[str] = "") -> str:
+    """Resolve the root for the file-manager endpoints.
+
+    Blank input falls back to the workspace ``output/`` directory so the
+    file manager works without an active project.
+    """
+    raw = str(path or "").strip()
+    if not raw:
+        return str(DEFAULT_OUTPUT_DIR)
+    return normalize_project_path(raw, allow_blank=False)
+
+
 def safe_join(base: str | os.PathLike[str], *parts: str | os.PathLike[str]) -> str:
     """Join path parts below a validated base directory."""
     safe_base = Path(normalize_project_path(base, allow_blank=False)).resolve(strict=False)

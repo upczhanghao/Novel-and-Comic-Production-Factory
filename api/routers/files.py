@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from api.security import normalize_project_path, safe_join
+from api.security import resolve_files_root, safe_join
 from utils import read_file, save_string_to_txt
 
 router = APIRouter(tags=["files"])
@@ -34,7 +34,7 @@ def _is_allowed(name: str) -> bool:
 @router.get("/files")
 def list_files(filepath: str = "./output"):
     """列出项目目录下的文件（扁平表）。"""
-    filepath = normalize_project_path(filepath, allow_blank=False)
+    filepath = resolve_files_root(filepath)
     if not os.path.exists(filepath):
         return {"files": [], "filepath": filepath}
 
@@ -63,7 +63,7 @@ def list_files(filepath: str = "./output"):
 @router.get("/files/tree")
 def file_tree(filepath: str = "./output"):
     """以嵌套树的形式返回目录结构。"""
-    filepath = normalize_project_path(filepath, allow_blank=False)
+    filepath = resolve_files_root(filepath)
     if not os.path.exists(filepath):
         return {"tree": {"name": os.path.basename(filepath) or filepath, "path": "", "type": "dir", "children": []}, "filepath": filepath}
 
@@ -116,7 +116,7 @@ def recent_files(filepath: str = "./output", limit: int = 20):
 def get_file_content(filepath: str = "./output", path: str = ""):
     if not path:
         raise HTTPException(status_code=400, detail="path 参数不能为空")
-    base = normalize_project_path(filepath, allow_blank=False)
+    base = resolve_files_root(filepath)
     full = safe_join(base, path)
 
     ext = os.path.splitext(full)[1].lower()
@@ -145,7 +145,7 @@ def write_file_content(body: FileWriteBody):
     """编辑/覆盖已有文件内容（仅允许白名单后缀）。"""
     if not body.path:
         raise HTTPException(status_code=400, detail="path 不能为空")
-    base = normalize_project_path(body.filepath, allow_blank=False)
+    base = resolve_files_root(body.filepath)
     full = safe_join(base, body.path)
     ext = os.path.splitext(full)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -167,7 +167,7 @@ class FilesDeleteBody(BaseModel):
 
 @router.delete("/files/item")
 def delete_file_item(filepath: str = Query("./output"), path: str = Query(...)):
-    base = normalize_project_path(filepath, allow_blank=False)
+    base = resolve_files_root(filepath)
     full = safe_join(base, path)
     if not os.path.exists(full):
         raise HTTPException(status_code=404, detail=f"不存在: {path}")
@@ -187,7 +187,7 @@ def delete_file_item(filepath: str = Query("./output"), path: str = Query(...)):
 
 @router.post("/files/batch-delete")
 def batch_delete_files(body: FilesDeleteBody):
-    base = normalize_project_path(body.filepath, allow_blank=False)
+    base = resolve_files_root(body.filepath)
     trash_dir = os.path.join(os.path.dirname(base), "trash", os.path.basename(base))
     os.makedirs(trash_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -220,7 +220,7 @@ def search_files(
     """全文搜索：返回匹配文件、匹配次数、首个匹配片段。"""
     if not query.strip():
         raise HTTPException(status_code=400, detail="query 不能为空")
-    base = normalize_project_path(filepath, allow_blank=False)
+    base = resolve_files_root(filepath)
     if not os.path.isdir(base):
         return {"results": [], "query": query}
 
@@ -267,7 +267,7 @@ def search_files(
 
 @router.get("/files/download")
 def download_single_file(filepath: str = Query("./output"), path: str = Query(...)):
-    base = normalize_project_path(filepath, allow_blank=False)
+    base = resolve_files_root(filepath)
     full = safe_join(base, path)
     if not os.path.isfile(full):
         raise HTTPException(status_code=404, detail="文件不存在")
@@ -289,7 +289,7 @@ class FilesArchiveBody(BaseModel):
 @router.post("/files/archive")
 def archive_files(body: FilesArchiveBody):
     """打包为 zip 并下载（流式）。"""
-    base = normalize_project_path(body.filepath, allow_blank=False)
+    base = resolve_files_root(body.filepath)
     if not os.path.isdir(base):
         raise HTTPException(status_code=404, detail="项目目录不存在")
 

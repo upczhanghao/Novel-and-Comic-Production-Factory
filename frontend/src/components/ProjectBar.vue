@@ -119,23 +119,6 @@ async function onCreate() {
         </select>
       </div>
 
-      <div v-if="filepath" class="pb-meta">
-        <button class="pb-path" :title="filepath" @click="copyPath" type="button">
-          <span class="pb-icon">📁</span>
-          <span class="pb-path-text">{{ filepath }}</span>
-        </button>
-        <span class="pb-divider">·</span>
-        <span class="pb-saved" :class="saveStatus">
-          <span class="pb-dot" />
-          <span v-if="saveStatus === 'saving'">保存中…</span>
-          <span v-else-if="saveStatus === 'saved'">已保存</span>
-          <span v-else-if="saveStatus === 'error'">保存失败</span>
-          <span v-else>已同步</span>
-        </span>
-        <span class="pb-divider">·</span>
-        <span class="pb-updated">更新 {{ formatDate(updatedAt) }}</span>
-      </div>
-
       <div class="pb-actions">
         <button @click="showCreate = !showCreate" class="project-action" type="button">新建</button>
         <button @click="onDiscover" :disabled="discovering" class="project-action" type="button"
@@ -149,6 +132,23 @@ async function onCreate() {
           {{ deleting ? '删除中...' : '删除' }}
         </button>
       </div>
+    </div>
+
+    <div v-if="filepath" class="pb-meta">
+      <button class="pb-path" :title="filepath" @click="copyPath" type="button">
+        <span class="pb-icon">📁</span>
+        <span class="pb-path-text">{{ filepath }}</span>
+      </button>
+      <span class="pb-divider">·</span>
+      <span class="pb-saved" :class="saveStatus">
+        <span class="pb-dot" />
+        <span v-if="saveStatus === 'saving'">保存中…</span>
+        <span v-else-if="saveStatus === 'saved'">已保存</span>
+        <span v-else-if="saveStatus === 'error'">保存失败</span>
+        <span v-else>已同步</span>
+      </span>
+      <span class="pb-divider">·</span>
+      <span class="pb-updated">更新 {{ formatDate(updatedAt) }}</span>
     </div>
 
     <Transition name="slide">
@@ -167,18 +167,19 @@ async function onCreate() {
 </template>
 
 <style scoped>
-.project-bar.enhanced { display: flex; flex-direction: column; gap: 6px; }
-.pb-main { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.pb-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-ink-light); flex: 1; min-width: 0; }
-.pb-path { display: inline-flex; align-items: center; gap: 4px; max-width: 320px; padding: 4px 8px; border-radius: 6px; background: var(--color-surface-muted); border: 1px solid var(--color-control-border); color: var(--color-ink-light); cursor: pointer; transition: background 0.15s; }
+.project-bar.enhanced { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pb-main { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+.pb-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--color-ink-light); min-width: 0; justify-content: flex-end; }
+.pb-path { display: inline-flex; align-items: center; gap: 4px; max-width: min(320px, 100%); padding: 4px 8px; border-radius: 6px; background: var(--color-surface-muted); border: 1px solid var(--color-control-border); color: var(--color-ink-light); cursor: pointer; transition: background 0.15s; min-width: 0; }
 .pb-path:hover { background: var(--color-parchment-darker); color: var(--color-ink); }
 .pb-path-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; }
 .pb-icon { font-size: 11px; }
 .pb-divider { opacity: 0.4; }
-.pb-saved { display: inline-flex; align-items: center; gap: 4px; }
+.pb-saved { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .pb-saved .pb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-success); }
 .pb-saved.saving .pb-dot { background: var(--color-warning); animation: pulse 1s infinite; }
 .pb-saved.error .pb-dot { background: var(--color-error); }
-.pb-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.pb-updated { white-space: nowrap; }
+.pb-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 </style>

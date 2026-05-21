@@ -10,6 +10,7 @@ import re
 import ssl
 import requests
 import warnings
+from typing import Any
 logging.basicConfig(
     filename='app.log',      # 日志文件名
     filemode='a',            # 追加模式（'w' 会覆盖）
@@ -44,6 +45,19 @@ def get_vectorstore_dir(filepath: str) -> str:
     """获取 vectorstore 路径"""
     return os.path.join(filepath, "vectorstore")
 
+
+# 进程级 Chroma 客户端缓存：相同 (store_dir, collection_name) 的连续请求复用同一个实例。
+# key = (abs_store_dir, collection_name) → Chroma instance
+# 失效路径：clear_vector_store / shutil.rmtree 项目目录时由 _invalidate_store_cache 显式清理。
+_store_cache: dict[tuple, Any] = {}
+
+
+def _invalidate_store_cache(store_dir: str) -> None:
+    abs_dir = os.path.abspath(store_dir)
+    for key in [k for k in _store_cache if k[0] == abs_dir]:
+        _store_cache.pop(key, None)
+
+
 def clear_vector_store(filepath: str) -> bool:
     """清空 清空向量库"""
     import shutil
@@ -53,6 +67,7 @@ def clear_vector_store(filepath: str) -> bool:
         return False
     try:
         shutil.rmtree(store_dir)
+        _invalidate_store_cache(store_dir)
         logging.info(f"Vector store directory '{store_dir}' removed.")
         return True
     except Exception as e:
@@ -98,6 +113,7 @@ def init_vector_store(embedding_adapter, texts, filepath: str):
             client_settings=Settings(anonymized_telemetry=False),
             collection_name="novel_collection"
         )
+        _store_cache[(os.path.abspath(store_dir), "novel_collection")] = vectorstore
         return vectorstore
     except Exception as e:
         logging.warning(f"Init vector store failed: {e}")
@@ -115,6 +131,11 @@ def load_vector_store(embedding_adapter, filepath: str):
     if not os.path.exists(store_dir):
         logging.info("Vector store not found. Will return None.")
         return None
+
+    cache_key = (os.path.abspath(store_dir), "novel_collection")
+    cached = _store_cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         class LCEmbeddingWrapper(LCEmbeddings):
@@ -135,12 +156,14 @@ def load_vector_store(embedding_adapter, filepath: str):
                 return res
 
         chroma_embedding = LCEmbeddingWrapper()
-        return Chroma(
+        store = Chroma(
             persist_directory=store_dir,
             embedding_function=chroma_embedding,
             client_settings=Settings(anonymized_telemetry=False),
             collection_name="novel_collection"
         )
+        _store_cache[cache_key] = store
+        return store
     except Exception as e:
         logging.warning(f"Failed to load vector store: {e}")
         traceback.print_exc()

@@ -78,8 +78,8 @@ function labelFor(s: Status) {
 
 <style scoped>
 .ch-wrap { position: relative; }
-.ch-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 11px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; color: rgba(255,255,255,0.7); cursor: pointer; }
-.ch-btn:hover { background: rgba(255,255,255,0.1); }
+.ch-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; background: #fff; border: 1px solid #d4d4d8; border-radius: 6px; color: var(--color-ink); cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.ch-btn:hover { border-color: var(--color-leather-light); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12); }
 .ch-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .ch-text { font-family: var(--font-mono); }
 .dot-ok { background: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,0.25); }

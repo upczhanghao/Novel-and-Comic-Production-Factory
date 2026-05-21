@@ -203,13 +203,14 @@ function openSearch() {
 </template>
 
 <style scoped>
-.sidebar-search { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 8px 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: rgba(255,255,255,0.6); font-size: 12px; cursor: pointer; transition: background 0.15s; }
-.sidebar-search:hover { background: rgba(255,255,255,0.08); color: white; }
+.sidebar-search { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 8px 10px; background: var(--color-surface-muted); border: 1px solid var(--color-control-border); border-radius: 8px; color: var(--color-ink-light); font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.sidebar-search:hover { background: var(--color-parchment-dark); color: var(--color-ink); }
 .ss-icon { font-size: 11px; }
 .ss-label { flex: 1; text-align: left; }
-.ss-kbd { font-family: var(--font-mono); font-size: 10px; padding: 1px 4px; background: rgba(255,255,255,0.08); border-radius: 3px; color: rgba(255,255,255,0.5); }
-.mode-toggle { margin-top: 8px; display: inline-flex; background: rgba(255,255,255,0.06); border-radius: 999px; padding: 2px; border: 0; cursor: pointer; }
-.mode-toggle span { padding: 4px 12px; border-radius: 999px; font-size: 11px; color: rgba(255,255,255,0.6); transition: all 0.15s; }
+.ss-kbd { font-family: var(--font-mono); font-size: 10px; padding: 1px 4px; background: var(--color-parchment-darker); border-radius: 3px; color: var(--color-ink-light); }
+.mode-toggle { margin-top: 8px; display: inline-flex; background: #fff; border-radius: 999px; padding: 2px; border: 1px solid #d4d4d8; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.mode-toggle:hover { border-color: var(--color-leather-light); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12); }
+.mode-toggle span { padding: 4px 12px; border-radius: 999px; font-size: 11px; color: var(--color-ink-light); transition: all 0.15s; }
 .mode-toggle span.active { background: var(--color-gold); color: white; }
 .mobile-search-btn { background: transparent; border: 1px solid var(--color-control-border); border-radius: 8px; padding: 6px; margin-right: 6px; }
 .m-toggle { display: flex; justify-content: space-between; width: 100%; background: transparent; border: 0; padding: 6px 4px; cursor: pointer; }

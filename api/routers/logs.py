@@ -4,7 +4,6 @@
 
 import json
 import os
-from collections import deque
 from fastapi import APIRouter, HTTPException
 from api.app_state import get_web_app
 from api.security import redact_secrets, redact_text
@@ -12,6 +11,28 @@ from api.security import redact_secrets, redact_text
 router = APIRouter(tags=["logs"])
 
 _PROMPT_HISTORY_FILE = "prompt_history.jsonl"
+# 限制单次扫描的最大字节数，避免历史文件膨胀后阻塞线程池槽位
+_PROMPT_HISTORY_MAX_BYTES = 8 * 1024 * 1024  # 8 MB
+_PROMPT_HISTORY_TAIL_BYTES = 256 * 1024      # 无搜索时只读末尾 256 KB
+
+
+def _tail_lines(path: str, max_bytes: int) -> list[str]:
+    """反向读取最多 max_bytes 字节，按行返回（不含末尾不完整行）。"""
+    size = os.path.getsize(path)
+    read_size = min(size, max_bytes)
+    with open(path, "rb") as f:
+        f.seek(size - read_size)
+        chunk = f.read(read_size)
+    if read_size < size:
+        # 丢弃首段可能不完整的行
+        nl = chunk.find(b"\n")
+        if nl >= 0:
+            chunk = chunk[nl + 1 :]
+    try:
+        text = chunk.decode("utf-8", errors="ignore")
+    except Exception:
+        text = ""
+    return text.splitlines()
 
 
 # ── 运行日志 ──────────────────────────────────────────────────────────────────
@@ -45,8 +66,13 @@ def get_prompt_history(tail: int = 50, search: str = ""):
     tail = max(1, min(int(tail or 50), 200))
 
     try:
-        with open(_PROMPT_HISTORY_FILE, "r", encoding="utf-8") as f:
-            lines = list(deque(f, maxlen=5000 if search.strip() else tail * 4))
+        if search.strip():
+            lines = _tail_lines(_PROMPT_HISTORY_FILE, _PROMPT_HISTORY_MAX_BYTES)
+        else:
+            lines = _tail_lines(_PROMPT_HISTORY_FILE, _PROMPT_HISTORY_TAIL_BYTES)
+            # 末尾窗口太小取不到 tail*4 行时再扩展一次
+            if len(lines) < tail * 4:
+                lines = _tail_lines(_PROMPT_HISTORY_FILE, _PROMPT_HISTORY_MAX_BYTES)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"读取失败: {e}")
 

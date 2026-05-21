@@ -30,6 +30,7 @@ from typing import Any, Optional
 
 from novel_generator.vectorstore_utils import (
     _vectorstore_deps,
+    _store_cache,
     split_text_for_vectorstore,
 )
 from novel_generator.knowledge import advanced_split_content
@@ -125,12 +126,23 @@ def _open_store(cfg: LibraryConfig, embedding_adapter, *, create: bool = False):
     if not create and not os.path.exists(cfg.store_dir):
         return None
     os.makedirs(cfg.store_dir, exist_ok=True)
-    return Chroma(
+    cache_key = (os.path.abspath(cfg.store_dir), cfg.collection_name)
+    cached = _store_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    store = Chroma(
         persist_directory=cfg.store_dir,
         embedding_function=_wrap_embedding_adapter(embedding_adapter),
         client_settings=Settings(anonymized_telemetry=False),
         collection_name=cfg.collection_name,
     )
+    _store_cache[cache_key] = store
+    return store
+
+
+def _evict_store(cfg: LibraryConfig) -> None:
+    cache_key = (os.path.abspath(cfg.store_dir), cfg.collection_name)
+    _store_cache.pop(cache_key, None)
 
 
 def _collection_count(store) -> int:
@@ -414,6 +426,7 @@ def replace_file(
 
 def clear_library(cfg: LibraryConfig) -> None:
     """彻底清空：删除整个 store_dir。"""
+    _evict_store(cfg)
     if os.path.exists(cfg.store_dir):
         try:
             shutil.rmtree(cfg.store_dir)
@@ -439,6 +452,7 @@ def rebuild_library(cfg: LibraryConfig, embedding_adapter) -> dict:
                     pass
         except Exception:
             pass
+        _evict_store(cfg)
         # 物理清理 chroma 数据目录中除 manifest.json 与 sources/ 之外的内容
         for entry in os.listdir(cfg.store_dir):
             if entry in ("manifest.json", "sources"):

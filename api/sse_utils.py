@@ -12,7 +12,7 @@ from uuid import uuid4
 logger = logging.getLogger(__name__)
 
 # 共享线程池，避免每次 SSE 请求都新建
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=16)
 
 # 活跃操作注册表，用于取消支持
 _active_operations: dict[str, "ProgressQueue"] = {}

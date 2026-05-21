@@ -19,6 +19,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.security import default_cors_origins
 
+__version__ = "2.4.2"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -31,7 +33,7 @@ logging.basicConfig(
 app = FastAPI(
     title="NovelWriter API",
     description="AI 小说生成器 REST + SSE API",
-    version="2.1.0",
+    version=__version__,
 )
 
 
@@ -105,7 +107,7 @@ app.include_router(images.router, prefix="/api")
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "2.1.0"}
+    return {"status": "ok", "version": __version__}
 
 
 # ── 生产模式：serve Vue 构建产物 ───────────────────────────────────────────────

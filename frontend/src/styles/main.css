@@ -326,6 +326,7 @@ img {
 
 .studio-workspace {
   min-width: 0;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -450,18 +451,21 @@ img {
 
 .studio-content {
   min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   padding-bottom: 1.25rem;
 }
 
 .studio-content > div {
   width: 100%;
+  min-width: 0;
 }
 
 .studio-content > div.max-w-3xl,
 .studio-content > div.max-w-4xl,
 .studio-content > div.max-w-5xl,
 .studio-content > div.max-w-6xl {
-  max-width: min(1440px, calc(100vw - 248px - 2rem));
+  max-width: 100%;
 }
 
 .studio-content > div > h2:first-child {
