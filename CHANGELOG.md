@@ -3,6 +3,46 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.3.0] - 2026-05-21
+
+### Refactored — A 系列架构级第二轮（A3–A8 拆分/合并）
+
+本轮完成 v2.2.0 推迟的 6 项高风险架构改造。分三个独立 commit 落地：
+
+**Round 1 — A3 后端拆分**
+- **A3 拆分 `api/routers/manju.py`**（1772 行 → 5 模块包）：
+  - `manju/parser.py`（392）：TXT 解码 / 章节解析 / 结构化 I/O / 路径辅助
+  - `manju/prompts.py`（167）：图像 prompt 构建 / 视觉风格 / 角色卡
+  - `manju/pipeline.py`（474）：剧本改编 SSE / LLM 适配
+  - `manju/export.py`（286）：导出文件名 / 附件头 / 章节重新可导入归一化
+  - `manju/images.py`（241）：图片记录管理 / URL 附加
+  - `manju/routes.py`（571）：22 个 `@router` 端点 + `_sse_response`
+  - `__init__.py` 仅 `from .routes import router` 重新导出，调用方零改动
+
+**Round 2 — A7+A8 前端去重**
+- **A7 抽 `useLibrary(adapter)` 组合式**：KnowledgeView 与 StylesView 的作者参考库共享同一套库管理逻辑（load / import / delete / search / rebuild / clear / source preview）。两个 view 各自提供 `computed<LibraryAdapter>`（knowledge 按 filepath；author-ref 按 styleName），自动随作用域切换。模板与 CSS 各自保留。
+- **A8 抽 `usePromptTemplateEditor(opts)` + `extractVariables` / `highlightVariables`**：PresetsView 与 InstructionConfigView 共享变量分析、HTML 高亮、编辑器状态（selectedKey / editorContent / hasChanges / save / reset / copy / applyDefault）。`classPrefix` 选项同时支持 `pv-var` 与 `ic-var ok|unknown` 两套样式。
+
+**Round 3 — A6+A4+A5 数据流与持久化**
+- **A6 合并 `xp_presets` 进 ProfileView**：ProfileView 增加「命名片段」tab，承接全部 CRUD；`GlobalParamsCard` 简化为只读多选 + 「管理片段 →」跳转 `/profile?tab=snippets`。后端 `xp_presets.json` 保持不变，从 UX 层消除「XP 预设」与 PresetsView「提示词方案」的命名冲突。
+- **A4 漫剧分镜图走 images.py 派发**：`/manju/images/generate` 改用 `images_dir(filepath)`（原 `_work_dir + group_by_project=False`），分镜图与人物卡图统一存入 `<project>/images/<project>/`，自动出现在 ImageView 的 RecordsTab，不再丢失到 `manju/images/` 死角。
+- **A5 `useManjuHistory` 服务端持久化**：新增 `api/routers/manju/history.py`（4 个端点：list/create/delete/clear），快照写入 `manju/history/{kind}.json`，每 kind 上限 20 条。前端 `useManjuHistory.ts` 重写为异步 API，调用方接口不变（`snapshot/list/get/remove/clear`）。替换 localStorage 后单浏览器配额受限的问题，且支持多设备同步与备份。
+
+### Files
+
+新增：
+- `api/routers/manju/{parser,prompts,pipeline,export,images,history,routes}.py`、`api/routers/manju/__init__.py`
+- `frontend/src/composables/useLibrary.ts`、`frontend/src/composables/usePromptTemplateEditor.ts`
+
+删除：
+- `api/routers/manju.py`（拆分为包）
+
+主要修改：
+- `frontend/src/views/{Knowledge,Styles,Presets,InstructionConfig,Profile}View.vue`
+- `frontend/src/components/workshop/GlobalParamsCard.vue`
+- `frontend/src/composables/useManjuHistory.ts`
+- `frontend/src/api/client.ts`
+
 ## [2.2.0] - 2026-05-21
 
 ### Improved — A 审计打磨（A 系列架构级第一轮）

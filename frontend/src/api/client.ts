@@ -476,4 +476,13 @@ export const manjuApi = {
   charactersUrl: () => `/manju/characters`,
   scenesUrl: () => `/manju/scenes`,
   storyboardsUrl: () => `/manju/storyboards`,
+  // A5: 历史快照
+  historyList: (filepath: string, kind: string) =>
+    api.get('/manju/history', { params: { filepath, kind } }),
+  historyCreate: (filepath: string, body: { kind: string; label?: string; payload: unknown }) =>
+    api.post('/manju/history', body, { params: { filepath } }),
+  historyDelete: (filepath: string, kind: string, ts: number) =>
+    api.delete(`/manju/history/${encodeURIComponent(kind)}/${ts}`, { params: { filepath } }),
+  historyClear: (filepath: string, kind: string) =>
+    api.delete(`/manju/history/${encodeURIComponent(kind)}`, { params: { filepath } }),
 }

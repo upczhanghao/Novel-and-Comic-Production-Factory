@@ -16,6 +16,7 @@ from api.image_service import (
     add_image_prompt_items,
     add_image_record,
     image_response_payload,
+    images_dir,
     normalize_image_config,
     save_generated_image,
 )
@@ -494,15 +495,16 @@ def generate_manju_image(body: ManjuImageGenerateRequest):
         config = {**config, "provider": provider}
     prompt = _resolve_image_prompt(body)
     config = normalize_image_config(config)
+    # A4: 与 ImageView 派发共用 images_dir(filepath) 而非 manju 工作目录，
+    # 让分镜图自动出现在 RecordsTab。
     out_path = save_generated_image(
         config,
         prompt,
-        _work_dir(body.filepath),
+        body.filepath,
         body.source_type,
         body.source_id,
-        group_by_project=False,
     )
-    rel_path = os.path.relpath(out_path, _work_dir(body.filepath))
+    rel_path = os.path.relpath(out_path, images_dir(body.filepath))
     if body.source_type == "shot" and body.source_id:
         rows = _load_storyboard_rows(body.filepath)
         for row in rows:
