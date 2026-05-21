@@ -48,8 +48,10 @@ class ImageConfigCreate(BaseModel):
     api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     model: str = "gpt-image-1"
-    size: str = "1024x1536"
-    quality: str = "medium"
+    aspect_ratio: str = ""
+    resolution: str = ""
+    size: str = ""
+    quality: str = ""
     output_format: str = "png"
 
 
@@ -77,8 +79,10 @@ class TestImageConfigRequest(BaseModel):
     api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     model: str = "gpt-image-1"
-    size: str = "1024x1024"
-    quality: str = "low"
+    aspect_ratio: str = ""
+    resolution: str = ""
+    size: str = ""
+    quality: str = ""
     output_format: str = "png"
 
 
@@ -496,17 +500,6 @@ class ManjuShotRegenerateRequest(BaseModel):
     shot_id: str
     visual_style: str = ""
     extra_guidance: str = ""
-
-
-class ManjuImageConfigRequest(BaseModel):
-    filepath: str = "./output"
-    provider: str = "openai"
-    api_key: str = ""
-    base_url: str = "https://api.openai.com/v1"
-    model: str = "gpt-image-1"
-    size: str = "1024x1536"
-    quality: str = "medium"
-    output_format: str = "png"
 
 
 class ManjuImageGenerateRequest(BaseModel):

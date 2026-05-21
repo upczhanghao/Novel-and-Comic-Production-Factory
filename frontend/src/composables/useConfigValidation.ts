@@ -52,17 +52,20 @@ export function validateEmbedding(form: Record<string, unknown>, isEdit = false)
   return r
 }
 
+export const ASPECT_RATIOS = ['1:1', '9:16', '16:9', '4:3', '3:4', '3:2', '2:3'] as const
+export const RESOLUTIONS = ['480p', '720p', '1080p', '2k', '4k'] as const
+
 export function validateImage(form: Record<string, unknown>, isEdit = false): ValidationResult {
   const r = empty()
   checkName(String(form.config_name ?? ''), r)
   checkApiKey(String(form.api_key ?? ''), 'api_key', r, isEdit)
   checkUrl(String(form.base_url ?? ''), 'base_url', r)
-  const size = String(form.size ?? '')
-  if (size && !/^\d+x\d+$/.test(size)) r.errors.size = '尺寸格式应为 宽x高（如 1024x1536）'
-  else if (size) {
-    const [w, h] = size.split('x').map(Number)
-    if (w < 256 || h < 256) r.warnings.size = '宽高建议 ≥ 256'
-  }
+  const aspect = String(form.aspect_ratio ?? '')
+  const resolution = String(form.resolution ?? '')
+  if (aspect && !ASPECT_RATIOS.includes(aspect as typeof ASPECT_RATIOS[number]))
+    r.errors.aspect_ratio = `比例需为 ${ASPECT_RATIOS.join(' / ')} 之一`
+  if (resolution && !RESOLUTIONS.includes(resolution as typeof RESOLUTIONS[number]))
+    r.errors.resolution = `分辨率需为 ${RESOLUTIONS.join(' / ')} 之一`
   return r
 }
 

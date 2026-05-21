@@ -3,6 +3,31 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.0] - 2026-05-21
+
+### Changed — F1 图片参数：比例 + 分辨率档位 取代裸 size/quality
+
+**问题**：原图片配置面板让用户手填 `size`（如 `1024x1536`）+ 选 `quality`（low/medium/high），有两个痛点：
+1. 用户不知道 OpenAI gpt-image-1 只接受三档离散 size（`1024x1024 / 1024x1536 / 1536x1024`），输入 `1080x1920` 会直接 502
+2. `quality` 与 `size` 之间没有显式的语义联系，用户不清楚高分辨率是否一定要 high quality
+
+**改动**：
+- **新增 `api/image_params.py`** — 把「比例 + 分辨率档位」派生为 provider 实际接受的 `size + quality`：
+  - 7 档比例：`1:1 / 9:16 / 16:9 / 4:3 / 3:4 / 3:2 / 2:3`
+  - 5 档分辨率：`480p / 720p / 1080p / 2k / 4k`
+  - OpenAI / Mirrorstages（同样兼容 OpenAI Images Generations API，参考 https://www.mirrorstages.com/docs/api/images-generations.html）→ 比例向最近的离散 size 对齐，档位映射到 quality（480p/720p→low, 1080p→medium, 2k/4k→high）
+  - dall-e-3 → quality 退化为 standard / hd
+- **`normalize_image_config`** 同时持久化 `aspect_ratio` / `resolution` 与派生的 `size` / `quality`（向后兼容）：旧配置无新字段时由 `infer_aspect_resolution()` 自动反推
+- **schemas** `ImageConfigCreate` / `TestImageConfigRequest` 新增 `aspect_ratio` + `resolution` 字段，移除前端必填
+- **`/config/image/test`** 端点改为接收新参数，旧 `size/quality` 仍可由 `normalize_image_config` 兼容回填
+- **前端 `ImageConfigPanel.vue`** UI 重做：两个下拉（图片比例 / 分辨率档位）+ 实时「实际请求参数」预览胶囊（橙色高亮，显示派生出的 size + quality），用户编辑参数时即时反馈
+- **推荐模板** `api/data/recommended_templates.json` + `frontend/src/components/config/templates.ts` 改用新字段
+- **schemas 清理**：移除 M14 已废弃的 `ManjuImageConfigRequest`（自 PUT /manju/image-config 端点移除后即为死代码）
+
+### Files
+- 新增：`api/image_params.py`
+- 主要修改：`api/image_service.py`、`api/schemas.py`、`api/routers/config.py`、`api/data/recommended_templates.json`、`frontend/src/components/config/ImageConfigPanel.vue`、`frontend/src/composables/useConfigValidation.ts`、`frontend/src/components/config/templates.ts`
+
 ## [2.3.0] - 2026-05-21
 
 ### Refactored — A 系列架构级第二轮（A3–A8 拆分/合并）

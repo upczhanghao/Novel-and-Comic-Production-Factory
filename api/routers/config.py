@@ -203,11 +203,12 @@ def set_image_default(body: SetDefaultRequest):
 
 # ── 图片连通性测试 ───────────────────────────────────────────────────────────
 
-def _test_image_sync(provider, api_key, base_url, model, size, quality, output_format, progress):
+def _test_image_sync(provider, api_key, base_url, model, aspect_ratio, resolution, output_format, progress):
     progress(0.1, desc="正在准备图片生成测试...")
     config = normalize_image_config({
         "provider": provider, "api_key": api_key, "base_url": base_url,
-        "model": model, "size": size, "quality": quality, "output_format": output_format,
+        "model": model, "aspect_ratio": aspect_ratio, "resolution": resolution,
+        "output_format": output_format,
     }, {})
     progress(0.3, desc="正在调用图片 API...")
     img_bytes = generate_image_bytes(config, "A solid red square, minimal, flat color")
@@ -223,7 +224,7 @@ async def test_image_config(body: TestImageConfigRequest):
         run_with_sse(
             _test_image_sync,
             body.provider, body.api_key, body.base_url,
-            body.model, body.size, body.quality, body.output_format,
+            body.model, body.aspect_ratio, body.resolution, body.output_format,
         ),
         media_type="text/event-stream",
     )

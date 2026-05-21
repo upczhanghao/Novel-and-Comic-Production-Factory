@@ -5,7 +5,7 @@ import { useConfigStore } from '@/stores/config'
 import { useFeedbackStore } from '@/stores/feedback'
 import { confirmDialog } from '@/stores/confirm'
 import { useConfigHealth, relativeTestTime, statusIcon } from '@/composables/useConfigHealth'
-import { validateImage } from '@/composables/useConfigValidation'
+import { validateImage, ASPECT_RATIOS, RESOLUTIONS } from '@/composables/useConfigValidation'
 import { classifyImageError } from '@/composables/useImageError'
 import ConfigSectionHeader from './ConfigSectionHeader.vue'
 
@@ -19,7 +19,9 @@ const health = useConfigHealth('image')
 const empty = () => ({
   config_name: '', provider: 'openai', api_key: '',
   base_url: 'https://api.openai.com/v1',
-  model: 'gpt-image-1', size: '1024x1536', quality: 'medium', output_format: 'png',
+  model: 'gpt-image-1',
+  aspect_ratio: '9:16', resolution: '1080p',
+  output_format: 'png',
 })
 
 const selected = ref('')
@@ -45,11 +47,71 @@ function loadConfig(name: string) {
     api_key: (c.api_key as string) === '***' ? '' : ((c.api_key as string) ?? ''),
     base_url: (c.base_url as string) ?? 'https://api.openai.com/v1',
     model: (c.model as string) ?? 'gpt-image-1',
-    size: (c.size as string) ?? '1024x1536',
-    quality: (c.quality as string) ?? 'medium',
+    aspect_ratio: (c.aspect_ratio as string) || inferAspectFromLegacy(c) || '9:16',
+    resolution: (c.resolution as string) || inferResolutionFromLegacy(c) || '1080p',
     output_format: (c.output_format as string) ?? 'png',
   }
   testResult.value = ''
+}
+
+function inferAspectFromLegacy(c: Record<string, unknown>): string {
+  const size = String(c.size ?? '')
+  const m = size.match(/^(\d+)x(\d+)$/i)
+  if (!m) return ''
+  const w = Number(m[1]); const h = Number(m[2])
+  if (!w || !h) return ''
+  const r = w / h
+  if (Math.abs(r - 1) < 0.05) return '1:1'
+  if (Math.abs(r - 16 / 9) < 0.1) return '16:9'
+  if (Math.abs(r - 9 / 16) < 0.1) return '9:16'
+  if (Math.abs(r - 4 / 3) < 0.1) return '4:3'
+  if (Math.abs(r - 3 / 4) < 0.1) return '3:4'
+  return r > 1 ? '3:2' : '2:3'
+}
+
+function inferResolutionFromLegacy(c: Record<string, unknown>): string {
+  const size = String(c.size ?? '')
+  const m = size.match(/^(\d+)x(\d+)$/i)
+  if (!m) return ''
+  const long = Math.max(Number(m[1]), Number(m[2]))
+  if (long >= 3000) return '4k'
+  if (long >= 1800) return '2k'
+  if (long >= 1000) return '1080p'
+  if (long >= 700) return '720p'
+  return '480p'
+}
+
+const derivedSize = computed(() => derivePreviewSize(form.value.aspect_ratio, form.value.resolution, form.value.provider, form.value.model))
+const derivedQuality = computed(() => derivePreviewQuality(form.value.resolution, form.value.model))
+
+function derivePreviewSize(aspect: string, resolution: string, provider: string, model: string): string {
+  const aw_ah = aspect.split(':').map(Number)
+  if (aw_ah.length !== 2 || !aw_ah[0] || !aw_ah[1]) return '—'
+  const target = aw_ah[0] / aw_ah[1]
+  const p = (provider || '').toLowerCase()
+  const m = (model || '').toLowerCase()
+  if (p === 'openai' || p === 'mirrorstages' || m.startsWith('gpt-image') || m.startsWith('dall-e')) {
+    const candidates: [number, number][] = [[1024, 1024], [1024, 1536], [1536, 1024]]
+    let best = candidates[0]
+    let bestDiff = Infinity
+    for (const [w, h] of candidates) {
+      const d = Math.abs(w / h - target)
+      if (d < bestDiff) { best = [w, h]; bestDiff = d }
+    }
+    return `${best[0]}×${best[1]}`
+  }
+  const longEdge = ({ '480p': 480, '720p': 720, '1080p': 1080, '2k': 2048, '4k': 4096 } as Record<string, number>)[resolution] ?? 1080
+  const round64 = (n: number) => Math.max(64, Math.round(n / 64) * 64)
+  if (aw_ah[0] >= aw_ah[1]) {
+    return `${longEdge}×${round64(longEdge * aw_ah[1] / aw_ah[0])}`
+  }
+  return `${round64(longEdge * aw_ah[0] / aw_ah[1])}×${longEdge}`
+}
+
+function derivePreviewQuality(resolution: string, model: string): string {
+  const m = (model || '').toLowerCase()
+  if (m === 'dall-e-3') return ['1080p', '2k', '4k'].includes(resolution) ? 'hd' : 'standard'
+  return ({ '480p': 'low', '720p': 'low', '1080p': 'medium', '2k': 'high', '4k': 'high' } as Record<string, string>)[resolution] ?? 'medium'
 }
 
 watch(() => props.pendingPreset, (v) => {
@@ -98,9 +160,9 @@ function runTest(onSuccess?: () => void) {
       api_key: form.value.api_key,
       base_url: form.value.base_url,
       model: form.value.model,
-      // M24: 使用保存的参数测试，否则会绕过用户实际配置的尺寸/质量。
-      size: form.value.size || '1024x1024',
-      quality: form.value.quality || 'low',
+      // M24/F1: 用 aspect_ratio + resolution，后端派生 size + quality
+      aspect_ratio: form.value.aspect_ratio,
+      resolution: form.value.resolution,
       output_format: form.value.output_format,
     },
     (msg) => { testResult.value = msg },
@@ -218,18 +280,26 @@ function statusFor(name: string) {
           <input v-model="form.model" class="cf-input" placeholder="gpt-image-1" />
         </div>
         <div>
-          <label class="cf-label">尺寸</label>
-          <input v-model="form.size" class="cf-input" placeholder="1024x1536" />
-          <div v-if="validation.errors.size" class="cf-err">{{ validation.errors.size }}</div>
-          <div v-else-if="validation.warnings.size" class="cf-warn">{{ validation.warnings.size }}</div>
+          <label class="cf-label">图片比例</label>
+          <select v-model="form.aspect_ratio" class="cf-input">
+            <option v-for="r in ASPECT_RATIOS" :key="r" :value="r">{{ r }}</option>
+          </select>
+          <div v-if="validation.errors.aspect_ratio" class="cf-err">{{ validation.errors.aspect_ratio }}</div>
         </div>
         <div>
-          <label class="cf-label">质量</label>
-          <select v-model="form.quality" class="cf-input">
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
+          <label class="cf-label">分辨率档位</label>
+          <select v-model="form.resolution" class="cf-input">
+            <option v-for="r in RESOLUTIONS" :key="r" :value="r">{{ r }}</option>
           </select>
+          <div v-if="validation.errors.resolution" class="cf-err">{{ validation.errors.resolution }}</div>
+        </div>
+        <div class="sm:col-span-2">
+          <div class="cf-derived" :title="`provider=${form.provider}, model=${form.model}`">
+            <span class="cf-derived-label">实际请求参数</span>
+            <span class="cf-derived-pill">size: {{ derivedSize }}</span>
+            <span class="cf-derived-pill">quality: {{ derivedQuality }}</span>
+            <span class="cf-derived-hint">— 由比例 + 档位 + 模型自动派生，不需要手填</span>
+          </div>
         </div>
         <div>
           <label class="cf-label">输出格式</label>
@@ -279,4 +349,8 @@ function statusFor(name: string) {
 .cf-health { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin-top: 8px; background: var(--color-surface-muted); border: 1px solid var(--color-control-border); border-radius: 6px; font-size: 12px; }
 .cf-health-label { font-weight: 600; color: var(--color-ink); }
 .cf-health-time { color: var(--color-ink-light); }
+.cf-derived { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px; font-size: 11px; }
+.cf-derived-label { font-weight: 600; color: #9a3412; }
+.cf-derived-pill { padding: 2px 8px; background: white; border: 1px solid #fdba74; border-radius: 999px; font-family: ui-monospace, monospace; color: #7c2d12; }
+.cf-derived-hint { color: var(--color-ink-light); font-size: 10px; }
 </style>

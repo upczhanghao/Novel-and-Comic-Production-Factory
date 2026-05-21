@@ -32,17 +32,50 @@ def normalize_mirrorstages_base_url(base_url: str) -> str:
 
 
 def normalize_image_config(config: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    from api.image_params import (
+        ASPECT_RATIOS,
+        RESOLUTIONS,
+        derive_size_quality,
+        infer_aspect_resolution,
+    )
+
     existing = existing or {}
     provider = (config.get("provider") or "openai").strip().lower()
     default_base_url = MIRRORSTAGES_OPENAI_BASE_URL if provider == "mirrorstages" else "https://api.openai.com/v1"
     base_url = normalize_mirrorstages_base_url(config.get("base_url") or default_base_url) if provider == "mirrorstages" else (config.get("base_url") or default_base_url)
+
+    # F1: aspect_ratio + resolution 是新主字段；size / quality 派生写回保持向后兼容。
+    aspect_ratio = str(config.get("aspect_ratio") or "").strip()
+    resolution = str(config.get("resolution") or "").strip()
+    if not aspect_ratio or not resolution:
+        # 旧配置回填：从已存的 size/quality 反推
+        legacy_size = str(config.get("size") or existing.get("size") or "1024x1536")
+        legacy_quality = str(config.get("quality") or existing.get("quality") or "medium")
+        inferred_aspect, inferred_res = infer_aspect_resolution(legacy_size, legacy_quality)
+        aspect_ratio = aspect_ratio or inferred_aspect
+        resolution = resolution or inferred_res
+    if aspect_ratio not in ASPECT_RATIOS:
+        raise HTTPException(status_code=400, detail=f"aspect_ratio 只能是 {','.join(ASPECT_RATIOS)}")
+    if resolution not in RESOLUTIONS:
+        raise HTTPException(status_code=400, detail=f"resolution 只能是 {','.join(RESOLUTIONS)}")
+
+    pre_derive = {
+        "provider": provider,
+        "model": config.get("model") or "gpt-image-1",
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+    }
+    derived_size, derived_quality = derive_size_quality(pre_derive)
+
     normalized = {
         "provider": provider,
         "api_key": config.get("api_key", ""),
         "base_url": base_url,
         "model": config.get("model") or "gpt-image-1",
-        "size": config.get("size") or "1024x1536",
-        "quality": config.get("quality") or "medium",
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+        "size": derived_size,
+        "quality": derived_quality,
         "output_format": (config.get("output_format") or "png").strip().lower().lstrip("."),
     }
     if not normalized["api_key"] or normalized["api_key"] == "***":
