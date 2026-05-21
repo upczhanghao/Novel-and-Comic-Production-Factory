@@ -3,6 +3,31 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.1] - 2026-05-21
+
+### Fixed — `config.example.json` 与 `create_config()` 默认值同步
+
+**问题**：v2.1.0 之后多轮变更（S14 模型名修正、F1 image 参数从 `size`/`quality` 切到 `aspect_ratio`/`resolution`、`create_config()` 默认值重排）累积下来，`config.example.json` 已经与运行时实际生成的默认 `config.json` 漂移：
+- `gpt-5.4-mini-2026-03-17` 假模型名（S14 仅修了 templates.ts，漏了示例文件）
+- `embedding_configs` 下空字符串 key 的垃圾条目（一旦被 `cp` 成 config.json 会污染下拉菜单）
+- `gpt-image-2` 错字（应为 `gpt-image-1`）
+- `image_configs` 仍用 F1 之前的 `size`/`quality`，与新 schema 不一致
+- `choose_configs` 引用的 `"DeepSeek"` 在自身 `llm_configs` 里不存在，是悬空引用
+
+**改动**：
+- **`config.example.json`** 重写为 `config_manager.create_config()` 默认值的镜像：4 个 LLM（DeepSeek V3 / GPT 5 / MirrorStages-LLM / Gemini 2.5 Pro）+ 1 embedding（OpenAI）+ 2 image_configs（OpenAI-Images / MirrorStages-Images），补齐 `last_interface_format` 与 `webdav_config` 顶层段。API Key 字段使用 `YOUR_*_API_KEY` 占位符（运行时默认仍为 `""`），便于阅读但不会被误当成真实配置。
+- **`config_manager.py:create_config()`** image_configs 默认值同步改 F1 schema：`aspect_ratio: "9:16"` + `resolution: "1080p"`，不再写 `size`/`quality`。运行时行为不变（`api/image_service.py:normalize_image_config` 兼容旧 schema），但全新安装直接落新字段，不再走 `infer_aspect_resolution()` 反推路径。
+
+### Notes — 部署文件审计
+
+同步审计了 v2.1.0 之后的所有 deployment 文件，结论是 **无需改动**：
+- `start_api.sh` / `start_web.sh`：`ensure_runtime_files()` 已正确仅 seed `projects.json` + `xp_presets.json`（`config.json` 由 Python 端 `load_config()` → `create_config()` 在缺失时自动生成）；`output / styles / prompts / vectorstore` 已建。
+- `Dockerfile` / `docker-compose.yml`：`/app/data` 命名卷 + 4 个 bind mount 已覆盖所有 v2.4.0 持久化路径（含 v2.3.0 漫剧 history 落在 `output/<project>/manju/history/`）。CMD 中 `{ ... }` 块 + `exec uvicorn` 修复（v2.1.0）保留。
+- **新服务器部署不需要 `cp config.example.json config.json`** —— `README.md:170` 已正确写明「首次启动无需提前创建 config.json / projects.json / xp_presets.json」。`config.example.json` 在仓库中除 `README.md:353` 项目结构图外没有任何脚本引用，仅作文档参考。
+
+### Files
+- 主要修改：`config.example.json`、`config_manager.py`
+
 ## [2.4.0] - 2026-05-21
 
 ### Improved — F2 全局按钮响应式反馈

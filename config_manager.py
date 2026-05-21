@@ -84,8 +84,8 @@ def create_config(config_file: str) -> dict:
             "api_key": "",
             "base_url": "https://api.openai.com/v1",
             "model": "gpt-image-1",
-            "size": "1024x1536",
-            "quality": "medium",
+            "aspect_ratio": "9:16",
+            "resolution": "1080p",
             "output_format": "png"
         },
         "MirrorStages-Images": {
@@ -93,8 +93,8 @@ def create_config(config_file: str) -> dict:
             "api_key": "",
             "base_url": "https://api.mirrorstages.com/openai/v1",
             "model": "gpt-image-1",
-            "size": "1024x1536",
-            "quality": "medium",
+            "aspect_ratio": "9:16",
+            "resolution": "1080p",
             "output_format": "png"
         }
     },
