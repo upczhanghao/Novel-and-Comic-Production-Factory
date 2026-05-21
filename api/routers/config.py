@@ -496,3 +496,64 @@ def save_user_profile(body: dict):
     }
     _write_profile(data)
     return {"message": "✅ 用户画像已保存"}
+
+
+# A9: 顶栏单一红点指示器使用的健康摘要
+@router.get("/config/health")
+def config_health():
+    """返回三类配置的整体健康摘要：是否有默认配置 + 各组数量。
+
+    不主动探测网络（这交给前端 health store 缓存的「测试连接」结果）。
+    指示器关心的是配置文件是否完整、是否设置了默认。
+    """
+    app = get_web_app()
+    llm_configs = _named_configs(app.config.get("llm_configs", {}))
+    emb_configs = _named_configs(app.config.get("embedding_configs", {}))
+    img_configs = _named_configs(app.config.get("image_configs", {}))
+    choose = app.config.get("choose_configs", {})
+
+    # LLM: 5 个槽位都填 = ok；任意未配置或填了不存在的名字 = warning
+    llm_slots = {slot: choose.get(slot, "") for slot in LLM_DEFAULT_SLOTS}
+    llm_missing_slots = [s for s, n in llm_slots.items() if not n or n not in llm_configs]
+    llm_status = "ok" if (llm_configs and not llm_missing_slots) else ("warning" if llm_configs else "error")
+
+    emb_default = app.config.get("default_embedding_config", "")
+    emb_status = "ok" if (emb_configs and emb_default in emb_configs) else (
+        "warning" if emb_configs else "missing"
+    )
+
+    img_default = app.config.get("default_image_config", "")
+    img_status = "ok" if (img_configs and img_default in img_configs) else (
+        "warning" if img_configs else "missing"
+    )
+
+    # 总状态：LLM 必需，其他可选；任何 error 都是 error，否则若有 warning 即 warning
+    statuses = [llm_status, emb_status, img_status]
+    if "error" in statuses:
+        overall = "error"
+    elif "warning" in statuses:
+        overall = "warning"
+    else:
+        overall = "ok"
+
+    return {
+        "overall": overall,
+        "llm": {"status": llm_status, "count": len(llm_configs), "missing_slots": llm_missing_slots},
+        "embedding": {"status": emb_status, "count": len(emb_configs), "default": emb_default},
+        "image": {"status": img_status, "count": len(img_configs), "default": img_default},
+    }
+
+
+# A10: 推荐模板从 manifest 文件读取（支持热更新，无需重发布前端）
+@router.get("/config/recommended-templates")
+def list_recommended_templates():
+    import json as _json
+    from pathlib import Path as _Path
+    manifest = _Path(__file__).resolve().parents[1] / "data" / "recommended_templates.json"
+    if not manifest.exists():
+        return {"templates": []}
+    try:
+        data = _json.loads(manifest.read_text(encoding="utf-8"))
+        return {"templates": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取推荐模板 manifest 失败：{e}")

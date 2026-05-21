@@ -3,6 +3,25 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.2.0] - 2026-05-21
+
+### Improved — A 审计打磨（A 系列架构级第一轮）
+
+本轮处理 A 系列中低风险的 8 项；高风险的 5 项（A3 拆 manju.py / A4 漫剧分镜统一图像流 / A5 漫剧历史服务端持久化 / A6 合并 xp_presets 进 ProfileView / A7+A8 抽 LibraryManager+PromptTemplateEditor 去重）改期 v2.3.0。
+
+- **A1 ChapterStep 加载已有章节入口**：新增「已有章节」下拉，调用 `GET /generate/chapters` 列出全部已保存章节（草稿 / 终稿），点击直接载入；保存后自动刷新列表。原「📂 加载」按钮仍保留。
+- **A2 useChapterCursor 统一章节游标**：新增 `composables/useChapterCursor.ts`，把 `chapterNum / savedChapterNum / outlineBatchStart / humanizerStart/End` 收到单一来源；`setCursor(num)` 同时把 humanizer 范围拉到当前章。`loadChapter` 与 chapterNum watch 自动调用，消除「ChapterStep 选第 5 章但 HumanizerStep 还停留在 1-1」式的多源不同步。
+- **A9 服务端 /config/health + 顶栏指示器**：新增 `GET /config/health` 端点（聚合 LLM/Embedding/Image 三类配置健康度），新增 `<ConfigHealthIndicator>` 60 秒轮询 + 红/黄/绿点；点击弹出每组状态详情和「前往」配置页链接。替代散落各 view 的 banner。
+- **A10 推荐模板服务端 manifest**：把 8 个推荐配置从前端硬编码搬到 `api/data/recommended_templates.json`，新增 `GET /config/recommended-templates` 端点；前端 `templates.ts` 改用 `useRecommendedTemplates()` 组合式（共享缓存 + 网络失败兜底为 `FALLBACK_TEMPLATES`）。模型名更新不再需要重发布前端。
+- **A11 路由项目守卫**：`router.beforeEach` 强制检查 active project；未选择时跳转 `/no-project` 占位页（列出已有项目 / 提供新建表单），跳转后保留 `?to=` 自动跳回。`/config /presets /instructions /styles /knowledge /profile /logs /no-project` 标记 `requiresProject: false` 不受守卫约束。
+- **A12 build-time 禁用 alert/confirm**：新增 `frontend/scripts/check-no-blocking-dialogs.mjs`，扫描 .vue/.ts 文件中除 `stores/confirm.ts` 与 `ConfirmDialog.vue` 外的 `alert()`/`confirm()` 调用，违例时构建失败。捕获并修复了 `GlobalParamsCard.vue` 残留的 2 处 `alert()`，改为 `feedback.error()`。
+- **A13 命令面板**（前序 M26 已交付，本轮归档）：`<CommandPalette>` 已上线，⌘K / Ctrl+K 唤起。
+- **A14 路由 meta 单一数据源**：路由 meta 增加 `NavMeta` 接口（title / icon / group / level / hidden / bottomNav / requiresProject），`App.vue` 与 `CommandPalette.vue` 全部从 `navRoutes` 派生导航与命令列表，消除两份 14 项的硬编码数组。
+
+### Files
+- 新增：`frontend/src/composables/useChapterCursor.ts`、`frontend/src/components/ConfigHealthIndicator.vue`、`frontend/src/views/NoProjectView.vue`、`frontend/scripts/check-no-blocking-dialogs.mjs`、`api/data/recommended_templates.json`
+- 主要修改：`frontend/src/router/index.ts`、`frontend/src/App.vue`、`frontend/src/components/CommandPalette.vue`、`frontend/src/components/workshop/ChapterStep.vue`、`frontend/src/composables/useWorkshopState.ts`、`frontend/src/components/config/templates.ts`、`frontend/src/components/config/RecommendedTemplates.vue`、`frontend/src/components/workshop/GlobalParamsCard.vue`、`frontend/src/api/client.ts`、`api/routers/config.py`、`frontend/package.json`
+
 ## [2.1.3] - 2026-05-21
 
 ### Improved — P1 审计打磨（M1–M35 中等摩擦点修复）

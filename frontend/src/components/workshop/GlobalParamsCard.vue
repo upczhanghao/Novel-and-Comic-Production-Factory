@@ -3,8 +3,10 @@ import { ref, onMounted } from 'vue'
 import type { useWorkshopState } from '@/composables/useWorkshopState'
 import { xpPresetsApi } from '@/api/client'
 import { confirmDialog } from '@/stores/confirm'
+import { useFeedbackStore } from '@/stores/feedback'
 
 const props = defineProps<{ state: ReturnType<typeof useWorkshopState> }>()
+const feedback = useFeedbackStore()
 
 // XP 预设相关状态
 type XPPreset = { name: string; content: string }
@@ -71,7 +73,7 @@ async function saveXP() {
     cancelEdit()
     syncXpTypeFromSelection()
   } catch (e: unknown) {
-    alert((e as Error).message)
+    feedback.error("XP 预设操作失败", (e as Error).message)
   }
   xpSaving.value = false
 }
@@ -86,7 +88,7 @@ async function deleteXP(name: string) {
     await loadPresets()
     syncXpTypeFromSelection()
   } catch (e: unknown) {
-    alert((e as Error).message)
+    feedback.error("XP 预设操作失败", (e as Error).message)
   }
 }
 

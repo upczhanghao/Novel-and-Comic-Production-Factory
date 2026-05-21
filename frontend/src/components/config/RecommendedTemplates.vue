@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { TEMPLATES, type RecommendedTemplate, type TemplateKind } from './templates'
+import { computed } from 'vue'
+import { FALLBACK_TEMPLATES, useRecommendedTemplates, type RecommendedTemplate, type TemplateKind } from './templates'
 
 const emit = defineEmits<{ (e: 'apply', tpl: RecommendedTemplate): void }>()
+
+const templatesRef = useRecommendedTemplates()
+const templates = computed<RecommendedTemplate[]>(() => templatesRef.value ?? FALLBACK_TEMPLATES)
 
 function badgeFor(kind: TemplateKind) {
   return kind === 'llm' ? 'LLM' : kind === 'embedding' ? 'Embedding' : 'Image'
@@ -16,7 +20,7 @@ function badgeFor(kind: TemplateKind) {
     </div>
     <div class="rt-grid">
       <button
-        v-for="t in TEMPLATES"
+        v-for="t in templates"
         :key="t.id"
         type="button"
         class="rt-card"

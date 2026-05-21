@@ -42,6 +42,8 @@ export const projectsApi = {
 
 // ── Config ───────────────────────────────────────────────────────────────────
 export const configApi = {
+  health: () => api.get('/config/health'),
+  recommendedTemplates: () => api.get('/config/recommended-templates'),
   listLLM: () => api.get('/config/llm'),
   saveLLM: (data: Record<string, unknown>) => api.post('/config/llm', data),
   deleteLLM: (name: string) => api.delete(`/config/llm/${encodeURIComponent(name)}`),

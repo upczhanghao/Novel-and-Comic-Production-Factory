@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "node scripts/check-no-blocking-dialogs.mjs && vue-tsc --noEmit && vite build",
+    "lint:dialogs": "node scripts/check-no-blocking-dialogs.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,3 +1,6 @@
+import { ref } from 'vue'
+import { configApi } from '@/api/client'
+
 export type TemplateKind = 'llm' | 'embedding' | 'image'
 
 export interface RecommendedTemplate {
@@ -9,7 +12,8 @@ export interface RecommendedTemplate {
   preset: Record<string, unknown>
 }
 
-export const TEMPLATES: RecommendedTemplate[] = [
+// A10: 仅作为请求失败的兜底；服务端 manifest 是单一数据源（api/data/recommended_templates.json）
+export const FALLBACK_TEMPLATES: RecommendedTemplate[] = [
   {
     id: 'deepseek',
     kind: 'llm',
@@ -134,3 +138,20 @@ export const TEMPLATES: RecommendedTemplate[] = [
     },
   },
 ]
+
+// 单一的、应用范围内的模板状态；首次访问时拉取，失败回退到 FALLBACK_TEMPLATES
+const _templates = ref<RecommendedTemplate[] | null>(null)
+let _loading: Promise<void> | null = null
+
+export function useRecommendedTemplates() {
+  if (_templates.value === null && !_loading) {
+    _loading = configApi.recommendedTemplates()
+      .then((res) => {
+        const data = (res.data?.templates ?? []) as RecommendedTemplate[]
+        _templates.value = data.length ? data : FALLBACK_TEMPLATES
+      })
+      .catch(() => { _templates.value = FALLBACK_TEMPLATES })
+      .finally(() => { _loading = null })
+  }
+  return _templates
+}

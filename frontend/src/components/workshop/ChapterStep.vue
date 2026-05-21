@@ -1,15 +1,42 @@
 <script setup lang="ts">
+import { onMounted, watch } from 'vue'
 import type { useWorkshopState } from '@/composables/useWorkshopState'
 import StepCard from '@/components/StepCard.vue'
 import StreamOutput from '@/components/StreamOutput.vue'
 
-defineProps<{ state: ReturnType<typeof useWorkshopState> }>()
+const props = defineProps<{ state: ReturnType<typeof useWorkshopState> }>()
+
+onMounted(() => { props.state.refreshExistingChapters() })
+watch(() => props.state.filepath.value, () => { props.state.refreshExistingChapters() })
+
+function onPickExisting(e: Event) {
+  const num = Number((e.target as HTMLSelectElement).value)
+  if (!num) return
+  props.state.loadChapter(num)
+}
 </script>
 
 <template>
   <StepCard :step="3" title="生成章节草稿" description="根据蓝图逐章生成正文">
     <div class="space-y-3">
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div class="sm:col-span-2 lg:col-span-3">
+          <label class="block text-xs text-[var(--color-ink-light)] mb-1">已有章节</label>
+          <div class="flex gap-2 items-center">
+            <select
+              :value="state.savedChapterNum.value ?? ''"
+              @change="onPickExisting"
+              class="flex-1 border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm bg-white"
+              :disabled="!state.existingChapters.value.length"
+            >
+              <option value="">{{ state.existingChapters.value.length ? `共 ${state.existingChapters.value.length} 章，点击选择载入` : '尚无已保存章节' }}</option>
+              <option v-for="c in state.existingChapters.value" :key="c.num" :value="c.num">
+                第 {{ c.num }} 章{{ c.has_final ? '' : c.has_draft ? '（草稿）' : '' }}
+              </option>
+            </select>
+            <button @click="state.refreshExistingChapters()" class="px-3 py-2 text-xs border border-[var(--color-parchment-darker)] rounded-md hover:bg-[var(--color-surface-muted)]" type="button" title="刷新列表">🔄</button>
+          </div>
+        </div>
         <div>
           <label class="block text-xs text-[var(--color-ink-light)] mb-1">章节号</label>
           <div class="flex gap-2">

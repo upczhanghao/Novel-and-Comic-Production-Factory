@@ -3,6 +3,7 @@ import { useProjectStore } from '@/stores/project'
 import { useConfigStore } from '@/stores/config'
 import { useGenerateStore } from '@/stores/generate'
 import { postSSE, generateApi, stylesApi, configApi, type SSEHandle } from '@/api/client'
+import { useChapterCursor } from '@/composables/useChapterCursor'
 
 export type StepState = {
   running: boolean
@@ -54,7 +55,9 @@ export function useWorkshopState() {
   // 章节细纲
   const detailedOutline = ref(mkState())
   const outlineText = ref('')
-  const outlineBatchStart = ref(1)
+  // A2: 章节游标统一来源（chapterNum / savedChapterNum / outlineBatchStart / humanizerStart/End）
+  const cursor = useChapterCursor()
+  const outlineBatchStart = cursor.outlineBatchStart
   const outlineBatchSize = ref(5)
   const outlineMode = ref('concise')  // concise / detailed
   const outlineBatchResult = ref('')
@@ -98,9 +101,11 @@ export function useWorkshopState() {
   // 章节参数
   const injectWorldBuilding = ref(false)
   const sceneByScene = ref(false)  // 按场景分段生成
-  const chapterNum = ref(1)
+  const chapterNum = cursor.chapterNum
   // 章节内容当前归属的章节号（在生成成功时锁定），用于避免「先生成第 5 章、再把 chapterNum 改成 6、然后点保存」把第 5 章内容写到第 6 章
-  const savedChapterNum = ref<number | null>(null)
+  const savedChapterNum = cursor.savedChapterNum
+  // A1: 已生成章节列表，供 ChapterStep 下拉选择
+  const existingChapters = ref<Array<{ num: number; has_draft: boolean; has_final: boolean }>>([])
   const charactersInvolved = ref('')
   const keyItems = ref('')
   const sceneLocation = ref('')
@@ -229,8 +234,10 @@ export function useWorkshopState() {
   const humanizerBatch = ref(false)
   const humanizerR8 = ref(false)
   const humanizerFocus = ref('')
-  const humanizerStart = ref(1)
-  const humanizerEnd = ref(1)
+  const humanizerStart = cursor.humanizerStart
+  const humanizerEnd = cursor.humanizerEnd
+  // 用户直接改 chapterNum（输入框）时，把 humanizer 范围一起拉过来
+  watch(chapterNum, (n) => cursor.setCursor(n))
   const humanizerDepth = ref<'quick' | 'standard' | 'deep'>('standard')
   // 对比预览状态
   const humanizerOriginal = ref('')
@@ -517,6 +524,7 @@ export function useWorkshopState() {
     try {
       await generateApi.saveChapter(num, chapter.value.result, filepath.value)
       saveMsg.value = `✅ 第 ${num} 章已保存`
+      refreshExistingChapters()
     } catch (e: unknown) { saveMsg.value = `❌ ${(e as Error).message}` }
     setTimeout(() => { saveMsg.value = '' }, 3000)
   }
@@ -532,10 +540,21 @@ export function useWorkshopState() {
         chapter.value.result = text
         chapter.value.error = ''
         savedChapterNum.value = num
+        cursor.setCursor(num)
         saveMsg.value = `✅ 已加载第 ${num} 章`
       }
     } catch (e: unknown) { saveMsg.value = `❌ ${(e as Error).message}` }
     setTimeout(() => { saveMsg.value = '' }, 3000)
+  }
+
+  // A1: 刷新已有章节列表（ChapterStep 下拉用）
+  async function refreshExistingChapters() {
+    if (!filepath.value) { existingChapters.value = []; return }
+    try {
+      const res = await generateApi.chapters(filepath.value)
+      const list = (res.data as { chapters?: Array<{ num: number; has_draft: boolean; has_final: boolean }> }).chapters || []
+      existingChapters.value = list
+    } catch { existingChapters.value = [] }
   }
 
   // ── Ctrl+S 快捷键 ────────────────────────────────────────────────────────
@@ -1190,7 +1209,7 @@ export function useWorkshopState() {
     // chapter params
     injectWorldBuilding, sceneByScene,
     chapterNum, savedChapterNum, charactersInvolved, keyItems, sceneLocation, timeConstraint, chGuidance,
-    loadChapter,
+    loadChapter, existingChapters, refreshExistingChapters, setChapterCursor: cursor.setCursor,
     // batch
     batch, batchAutoExport,
     // continue

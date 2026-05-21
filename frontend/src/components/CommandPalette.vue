@@ -5,6 +5,7 @@ import { useUIStore } from '@/stores/ui'
 import { useProjectStore } from '@/stores/project'
 import { useConfigStore } from '@/stores/config'
 import { presetsApi, stylesApi } from '@/api/client'
+import { navRoutes, type NavMeta } from '@/router'
 
 interface PaletteItem {
   id: string
@@ -25,22 +26,10 @@ const inputRef = ref<HTMLInputElement | null>(null)
 const presets = ref<string[]>([])
 const stylesList = ref<string[]>([])
 
-const modules = [
-  { path: '/', label: '创作工坊' },
-  { path: '/config', label: '模型配置' },
-  { path: '/presets', label: '提示词方案' },
-  { path: '/instructions', label: '指令配置' },
-  { path: '/styles', label: '文风与DNA' },
-  { path: '/knowledge', label: '知识库' },
-  { path: '/consistency', label: '一致性检查' },
-  { path: '/brainstorm', label: '创意讨论' },
-  { path: '/manju', label: '漫剧制作' },
-  { path: '/images', label: '图片生成' },
-  { path: '/profile', label: '用户画像' },
-  { path: '/files', label: '文件管理' },
-  { path: '/logs', label: '运行日志' },
-  { path: '/reader', label: '小说阅读' },
-]
+// A14: 模块列表派生自 router meta
+const modules = navRoutes
+  .filter((r) => !r.meta?.hidden && (r.meta as NavMeta | undefined)?.title)
+  .map((r) => ({ path: r.path, label: (r.meta as NavMeta).title }))
 
 const allItems = computed<PaletteItem[]>(() => {
   const items: PaletteItem[] = []

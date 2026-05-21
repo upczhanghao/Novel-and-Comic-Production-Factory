@@ -25,6 +25,8 @@ output/
 trash/
 vectorstore/
 data/
+!api/data/
+!api/data/**
 projects.json
 xp_presets.json
 

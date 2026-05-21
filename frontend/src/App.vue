@@ -8,9 +8,11 @@ import FeedbackCenter from '@/components/FeedbackCenter.vue'
 import TaskBar from '@/components/TaskBar.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import ConfigHealthIndicator from '@/components/ConfigHealthIndicator.vue'
 import { useUIStore } from '@/stores/ui'
 import { useFeedbackStore } from '@/stores/feedback'
 import { useProjectStore } from '@/stores/project'
+import { navRoutes, GROUP_TITLES, type NavMeta } from '@/router'
 
 const route = useRoute()
 const ui = useUIStore()
@@ -24,37 +26,27 @@ onMounted(() => {
   if (!ui.onboardingDone) showOnboarding.value = true
 })
 
-const allNavLinks = [
-  { to: '/', label: '创作工坊', icon: 'workshop', level: 'beginner' },
-  { to: '/manju', label: '漫剧制作', icon: 'manju', level: 'beginner' },
-  { to: '/images', label: '图片生成', icon: 'images', level: 'beginner' },
-  { to: '/reader', label: '小说阅读', icon: 'reader', level: 'beginner' },
-  { to: '/brainstorm', label: '创意讨论', icon: 'brainstorm', level: 'beginner' },
-  { to: '/config', label: '模型配置', icon: 'settings', level: 'beginner' },
-  { to: '/presets', label: '提示词方案', icon: 'presets', level: 'advanced' },
-  { to: '/instructions', label: '指令配置', icon: 'instructions', level: 'advanced' },
-  { to: '/styles', label: '文风与DNA', icon: 'styles', level: 'advanced' },
-  { to: '/knowledge', label: '知识库', icon: 'knowledge', level: 'advanced' },
-  { to: '/consistency', label: '一致性检查', icon: 'check', level: 'advanced' },
-  { to: '/profile', label: '用户画像', icon: 'profile', level: 'advanced' },
-  { to: '/files', label: '文件管理', icon: 'files', level: 'advanced' },
-  { to: '/logs', label: '运行日志', icon: 'logs', level: 'advanced' },
-]
+// A14: 全部导航从 router meta 派生
+interface NavLink { to: string; label: string; icon: string; level: 'beginner' | 'advanced'; group: NonNullable<NavMeta['group']>; bottomNav: boolean }
+const allNavLinks = computed<NavLink[]>(() => navRoutes
+  .filter((r) => !r.meta?.hidden && r.meta?.group && r.meta?.icon)
+  .map((r) => ({
+    to: r.path,
+    label: (r.meta as NavMeta).title,
+    icon: (r.meta as NavMeta).icon!,
+    level: (r.meta as NavMeta).level ?? 'advanced',
+    group: (r.meta as NavMeta).group!,
+    bottomNav: Boolean((r.meta as NavMeta).bottomNav),
+  })))
 
-const navLinks = computed(() => ui.isBeginner ? allNavLinks.filter((l) => l.level === 'beginner') : allNavLinks)
+const navLinks = computed(() => ui.isBeginner ? allNavLinks.value.filter((l) => l.level === 'beginner') : allNavLinks.value)
 
-const navGroups = computed(() => [
-  { key: 'create', title: '创作', items: navLinks.value.filter((link) => ['/', '/brainstorm', '/manju', '/images', '/reader'].includes(link.to)) },
-  { key: 'asset', title: '资产', items: navLinks.value.filter((link) => ['/presets', '/instructions', '/styles', '/knowledge', '/profile'].includes(link.to)) },
-  { key: 'system', title: '系统', items: navLinks.value.filter((link) => ['/config', '/consistency', '/files', '/logs'].includes(link.to)) },
-].filter((g) => g.items.length > 0))
+const navGroups = computed(() => (Object.keys(GROUP_TITLES) as (keyof typeof GROUP_TITLES)[])
+  .map((key) => ({ key, title: GROUP_TITLES[key], items: navLinks.value.filter((l) => l.group === key) }))
+  .filter((g) => g.items.length > 0))
 
-const bottomLinks = computed(() => {
-  // M28: 根据 level 派生底部导航；新手只有创作工坊+漫剧+图片，高级再加文风
-  const wanted = ui.isBeginner ? ['/', '/manju', '/images'] : ['/', '/manju', '/images', '/styles']
-  return navLinks.value.filter((link) => wanted.includes(link.to))
-})
-const currentNav = computed(() => allNavLinks.find((link) => link.to === route.path) ?? allNavLinks[0])
+const bottomLinks = computed(() => navLinks.value.filter((l) => l.bottomNav))
+const currentNav = computed(() => allNavLinks.value.find((l) => l.to === route.path) ?? allNavLinks.value[0])
 
 function toggleGroup(key: string) {
   collapsedGroups.value[key] = !collapsedGroups.value[key]
@@ -113,6 +105,7 @@ function openSearch() {
         <div class="mt-2 text-[10px] text-[var(--color-ink-light)]">
           {{ ui.isBeginner ? '只显示核心模块，简化界面' : '展示全部模块与高级选项' }}
         </div>
+        <div class="mt-2"><ConfigHealthIndicator /></div>
       </div>
     </aside>
 
