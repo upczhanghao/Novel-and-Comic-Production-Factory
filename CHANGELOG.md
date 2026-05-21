@@ -5,6 +5,34 @@
 
 ## [2.4.0] - 2026-05-21
 
+### Improved — F2 全局按钮响应式反馈
+
+**问题**：项目里 341 个 `<button>`，多数只有 hover 色变，没有 `:active` 按下动效，也没有 `:focus-visible` 键盘焦点环；async 按钮（保存 / 删除 / 测试）点击后到 toast 弹出之间的几百毫秒里没有任何视觉反馈，用户容易重复点击。
+
+**改动**：
+
+**Layer 1 — 全局 CSS 兜底**（`frontend/src/styles/main.css`）：
+- 所有 `<button>` + `a[class*="px-*"]` 加 120ms 颜色 / 边框 / transform 过渡；按下时 `transform: translateY(1px) scale(0.985)` 给即时按压感
+- `:focus-visible` 加 3px 蓝色焦点环（仅键盘聚焦时显示，鼠标点击不会出现）
+- `[data-busy="true"]` / `[aria-busy="true"]` 自动覆盖一个旋转 spinner（700ms 一圈），文字变透明，事件被锁住 — 任何按钮加上这个属性即可获得 loading 态
+- `[data-flash="ok"]` / `[data-flash="err"]` 触发 800ms 一次的脉冲光晕，绿 / 红表示成功 / 失败
+- `prefers-reduced-motion: reduce` 时所有动效降级为无过渡
+
+**Layer 2 — `useAsyncAction` 组合式 + `<AsyncButton>` 组件**：
+- `useAsyncAction()` 把一段 async 函数包成 `{ busy, flash, run }`，调用期间 busy=true、结束后 flash 显示 ok/err 一次脉冲，自动防双击
+- `<AsyncButton :action="fn">` 是即开即用的封装：自动绑定 data-busy / data-flash，附带 4 种 variant（默认 / primary / ghost / danger）和 3 种 size
+- 也可以手动给现有按钮加 `:data-busy="busyRef" :data-flash="flashRef"`，复用同一套 CSS
+
+**Layer 3 — 关键路径接入**：
+- `ImageConfigPanel.vue` / `LLMConfigPanel.vue` / `EmbeddingConfigPanel.vue`：保存 / 删除按钮接入 `useAsyncAction`，保存成功后绿脉冲，失败红脉冲；测试按钮在 SSE 期间显示 spinner（之前只是改文字）
+- `ProjectBar.vue`：发现 / 删除 / 创建项目按钮加 `:data-busy`，长扫描操作可看到 spinner
+
+未受影响的 300+ 个按钮自动获得 Layer 1 的兜底效果（按下动画 + 焦点环）。"Fire-and-forget" 但已有标签切换的按钮（`'保存中...'` / `'生成中...'`）保留原 UX，因为文字反馈比 spinner 更具体。
+
+### Files
+- 新增：`frontend/src/composables/useAsyncAction.ts`、`frontend/src/components/AsyncButton.vue`
+- 主要修改：`frontend/src/styles/main.css`、`frontend/src/components/config/{Image,LLM,Embedding}ConfigPanel.vue`、`frontend/src/components/ProjectBar.vue`
+
 ### Changed — F1 图片参数：比例 + 分辨率档位 取代裸 size/quality
 
 **问题**：原图片配置面板让用户手填 `size`（如 `1024x1536`）+ 选 `quality`（low/medium/high），有两个痛点：

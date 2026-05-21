@@ -754,6 +754,105 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* ── F2: 全局按钮响应反馈 ───────────────────────────────────
+ * 给所有 <button> 和 <a class="px-*"> 兜底一份按下/聚焦动画与忙碌态视觉。
+ * 单个组件如果已有 transform/transition，会被自身样式覆盖（更具体优先）；
+ * 没自带的就用这套，确保「点了就有反应」。
+ */
+button,
+a[class*="px-3"],
+a[class*="px-4"],
+a[class*="px-5"] {
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.08s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+  will-change: transform;
+}
+
+button:not(:disabled):active,
+a[class*="px-3"]:active,
+a[class*="px-4"]:active,
+a[class*="px-5"]:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+button:focus-visible,
+a[href]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.28);
+}
+
+@keyframes nw-btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+button[data-busy="true"],
+button[aria-busy="true"] {
+  position: relative;
+  pointer-events: none;
+  color: transparent !important;
+  text-shadow: none;
+}
+
+button[data-busy="true"]::after,
+button[aria-busy="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  color: var(--color-ink);
+  opacity: 0.7;
+  animation: nw-btn-spin 0.7s linear infinite;
+}
+
+@keyframes nw-btn-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45); }
+  70%  { box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
+button[data-flash="ok"],
+button[data-flash="err"] {
+  animation: nw-btn-pulse 0.8s ease-out 1;
+}
+button[data-flash="ok"] {
+  --pulse-color: 16, 185, 129;
+}
+button[data-flash="err"] {
+  --pulse-color: 220, 38, 38;
+}
+button[data-flash]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px rgba(var(--pulse-color, 37, 99, 235), 0.6);
+  animation: nw-btn-pulse 0.8s ease-out 1;
+}
+button[data-flash] {
+  position: relative;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  a[class*="px-3"],
+  a[class*="px-4"],
+  a[class*="px-5"] {
+    transition: none !important;
+    animation: none !important;
+  }
+  button:not(:disabled):active,
+  a[class*="px-3"]:active,
+  a[class*="px-4"]:active,
+  a[class*="px-5"]:active {
+    transform: none;
+  }
+}
+
 .mobile-topbar,
 .mobile-bottom-nav,
 .mobile-drawer,

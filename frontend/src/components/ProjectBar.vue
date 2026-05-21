@@ -139,10 +139,12 @@ async function onCreate() {
       <div class="pb-actions">
         <button @click="showCreate = !showCreate" class="project-action" type="button">新建</button>
         <button @click="onDiscover" :disabled="discovering" class="project-action" type="button"
+          :data-busy="discovering ? 'true' : undefined"
           title="扫描 output 目录，自动发现并注册已有项目">
           {{ discovering ? '扫描中...' : '发现' }}
         </button>
         <button v-if="projectStore.activeProject" @click="onDelete" :disabled="deleting"
+          :data-busy="deleting ? 'true' : undefined"
           class="project-action danger" type="button">
           {{ deleting ? '删除中...' : '删除' }}
         </button>
@@ -153,7 +155,9 @@ async function onCreate() {
       <div v-if="showCreate" class="project-create">
         <input v-model="newName" placeholder="项目名称" class="project-input" />
         <input v-model="newPath" placeholder="输出路径（可选）" class="project-input" />
-        <button @click="onCreate" :disabled="creating" class="project-action primary" type="button">
+        <button @click="onCreate" :disabled="creating"
+          :data-busy="creating ? 'true' : undefined"
+          class="project-action primary" type="button">
           {{ creating ? '创建中...' : '创建' }}
         </button>
         <button @click="showCreate = false" class="project-action" type="button">取消</button>

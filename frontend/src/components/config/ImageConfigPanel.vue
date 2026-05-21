@@ -6,6 +6,7 @@ import { useFeedbackStore } from '@/stores/feedback'
 import { confirmDialog } from '@/stores/confirm'
 import { useConfigHealth, relativeTestTime, statusIcon } from '@/composables/useConfigHealth'
 import { validateImage, ASPECT_RATIOS, RESOLUTIONS } from '@/composables/useConfigValidation'
+import { useAsyncAction } from '@/composables/useAsyncAction'
 import { classifyImageError } from '@/composables/useImageError'
 import ConfigSectionHeader from './ConfigSectionHeader.vue'
 
@@ -121,16 +122,21 @@ watch(() => props.pendingPreset, (v) => {
   emit('consumed')
 })
 
+const saveAction = useAsyncAction()
+const deleteAction = useAsyncAction()
+
 async function save() {
   if (hasErrors.value) {
     feedback.warning('表单存在错误，请先修正')
     return
   }
   try {
-    await configApi.saveImage(form.value as Record<string, unknown>)
-    await configStore.loadAll()
-    selected.value = form.value.config_name
-    feedback.success(`✅ 图片配置「${form.value.config_name}」已保存`)
+    await saveAction.run(async () => {
+      await configApi.saveImage(form.value as Record<string, unknown>)
+      await configStore.loadAll()
+      selected.value = form.value.config_name
+      feedback.success(`✅ 图片配置「${form.value.config_name}」已保存`)
+    })
   } catch (e) {
     feedback.error('保存失败', (e as Error).message)
   }
@@ -140,11 +146,13 @@ async function deleteSelected() {
   if (!selected.value) return
   if (!(await confirmDialog(`确认删除配置「${selected.value}」？`))) return
   try {
-    await configApi.deleteImage(selected.value)
-    feedback.success(`✅ 已删除「${selected.value}」`)
-    selected.value = ''
-    form.value = empty()
-    await configStore.loadAll()
+    await deleteAction.run(async () => {
+      await configApi.deleteImage(selected.value)
+      feedback.success(`✅ 已删除「${selected.value}」`)
+      selected.value = ''
+      form.value = empty()
+      await configStore.loadAll()
+    })
   } catch (e) {
     feedback.error('删除失败', (e as Error).message)
   }
@@ -239,7 +247,13 @@ function statusFor(name: string) {
           </option>
         </select>
         <button class="cf-btn" type="button" @click="selected = ''; form = empty()">+ 新建</button>
-        <button class="cf-btn danger" type="button" :disabled="!selected" @click="deleteSelected">删除</button>
+        <button
+          class="cf-btn danger" type="button"
+          :disabled="!selected"
+          :data-busy="deleteAction.busy.value ? 'true' : undefined"
+          :data-flash="deleteAction.flash.value || undefined"
+          @click="deleteSelected"
+        >删除</button>
       </div>
 
       <div v-if="selected" class="cf-health" title="健康状态仅保存在当前浏览器，更换设备需重新测试">
@@ -317,13 +331,29 @@ function statusFor(name: string) {
       </div>
 
       <div class="cf-row mt-3 justify-end">
-        <button class="cf-btn ghost" type="button" :disabled="testing || !form.model" @click="testOnly">
+        <button
+          class="cf-btn ghost" type="button"
+          :disabled="testing || !form.model"
+          :data-busy="testing ? 'true' : undefined"
+          @click="testOnly"
+        >
           {{ testing ? '测试中…' : '测试连接' }}
         </button>
-        <button class="cf-btn ghost" type="button" :disabled="testing || !isEdit" @click="testAndSetDefault">
+        <button
+          class="cf-btn ghost" type="button"
+          :disabled="testing || !isEdit"
+          :data-busy="testing ? 'true' : undefined"
+          @click="testAndSetDefault"
+        >
           测试并设为默认
         </button>
-        <button class="cf-btn primary" type="button" :disabled="hasErrors" @click="save">保存图片配置</button>
+        <button
+          class="cf-btn primary" type="button"
+          :disabled="hasErrors"
+          :data-busy="saveAction.busy.value ? 'true' : undefined"
+          :data-flash="saveAction.flash.value || undefined"
+          @click="save"
+        >保存图片配置</button>
       </div>
     </div>
   </div>
