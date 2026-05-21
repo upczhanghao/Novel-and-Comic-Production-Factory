@@ -15,7 +15,7 @@
 - **客户端 IP 识别**：优先取 `X-Forwarded-For` 首跳，兼容 Cloudflare / nginx 反代。
 - **未捕获异常脱敏**：全局 `Exception` 处理器只回 `{"detail":"服务器内部错误，请稍后再试"}` + 500，详情记入 `app.log`，避免堆栈/路径外泄。`HTTPException` 仍按开发者写的 `detail` 返回。
 - **`/api/health` 去 version**：只返回 `{"status":"ok"}`，降低扫描器指纹。
-- **部署手册** `docs/DEPLOY-PUBLIC.md`：覆盖威胁模型、Cloudflare Tunnel + Access 首选方案、nginx + Token 备用方案、LLM 厂商账户硬限额、紧急处置。
+- **部署手册** `docs/DEPLOY-PUBLIC.md`：以「陌生人在找到域名后怎样才进不来」为核心问题组织，按 **L1 边界接入 / L2 身份验证 / L3 应用限流 / L4 厂商硬限额** 四层纵深防御串联首选方案（Cloudflare Tunnel + Access）与备用方案（nginx + Token + IP 白名单），每个步骤均说明对应防御层与失守后果，并附分层紧急处置表。
 
 ### Notes
 - 限流状态在内存里，单进程 uvicorn 部署足够。多副本/多用户场景需要先改造成 Redis backend，不在本版本范围内。
