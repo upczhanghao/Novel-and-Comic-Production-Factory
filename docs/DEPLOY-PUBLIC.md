@@ -127,11 +127,33 @@ journalctl -u storia -f
 
 A 方案的特点：**机器永远不暴露 80/443**，Tunnel 由你的服务器主动出站连到 Cloudflare 边缘；陌生人哪怕扫到你的 IP，也敲不出任何 HTTP 响应。身份验证由 Cloudflare Access 在边缘完成，未授权流量根本走不到你的机器。
 
+> **术语对齐**：本节出现的 "Cloudflare 控制台" 指 `https://dash.cloudflare.com`；"Zero Trust 控制台" 指从前者左侧 **Zero Trust** 菜单点进去后跳转到的 `https://one.dash.cloudflare.com`，两者账号同一个但侧栏不同。Tunnel 和 Access 的入口都在 **Zero Trust 控制台**。
+
+### 准备清单（在开始之前确认你有）
+
+- 一个已在域名注册商（阿里云/腾讯云/Namecheap/GoDaddy/Cloudflare Registrar 等）注册成功的域名，**且能登录到 NS 修改页面**。
+- 一个 Cloudflare 账号（免费版即可）。**强烈建议给该账号启用 TOTP 或硬件 key 二次验证**——这个账号一旦被入侵，L1 + L2 同时失守。
+- 你已经在服务器上跑起 Storia 并能通过 `curl http://127.0.0.1:7860/api/health` 拿到 `{"status":"ok"}`。
+
 ### L1：让陌生人的包到不了机器 — Cloudflare Tunnel
 
-**1. 域名托管到 Cloudflare**（免费版即可）。把域名 NS 改到 Cloudflare 给的两个地址，等生效。
+#### 步骤 1. 把域名托管到 Cloudflare（免费版）
 
-**2. 装 cloudflared**：
+1. 浏览器打开 `https://dash.cloudflare.com`，登录或注册。
+2. 主页右上点 **Add a site** → 输入你的根域名 `yourdomain.com`（**不要**带子域、不要带 `https://`）→ Continue。
+3. 选择 **Free** 方案 → Continue。Cloudflare 会自动扫描你现有 DNS 记录，**先确认列表里你原有的 A/MX/TXT 记录都在**——如果有缺，手动 Add record 补上，否则托管后邮件、其他子域会失联。
+4. 页面顶部会显示两个 Cloudflare 指派给你的 NS 地址，形如 `xxx.ns.cloudflare.com` / `yyy.ns.cloudflare.com`。记下它们。
+5. 登录你的**域名注册商**控制台（不是 Cloudflare），找到域名的 **Nameserver / DNS 服务器** 设置页：
+   - 阿里云：域名控制台 → 管理 → DNS 修改
+   - 腾讯云：域名注册 → 我的域名 → 管理 → 修改 DNS 服务器
+   - Namecheap：Domain List → Manage → Nameservers → Custom DNS
+   - GoDaddy：My Products → Domain → DNS → Nameservers → Change
+6. 把 NS 改成 Cloudflare 给你的两个地址，**只填这两个，删掉原有的全部 NS**。保存。
+7. 回到 Cloudflare 那个站点页面，点 **Done, check nameservers**。生效时间通常 5 分钟 ~ 24 小时，Cloudflare 检测到后会发邮件通知，站点状态变为 **Active**。
+
+> **等待 Active 之后再继续后面步骤**。NS 没生效就跑下面的 `tunnel login` / `route dns` 会失败或落到错误的 zone。
+
+#### 步骤 2. 在服务器上安装 cloudflared
 
 ```bash
 sudo mkdir -p --mode=0755 /usr/share/keyrings
@@ -141,59 +163,199 @@ echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudf
   sudo tee /etc/apt/sources.list.d/cloudflared.list
 sudo apt update
 sudo apt install -y cloudflared
+cloudflared --version   # 验证安装成功，应输出形如 "cloudflared version 2024.x.x"
 ```
 
-**3. 创建 Tunnel**：
+#### 步骤 3. 把 cloudflared 与你的 Cloudflare 账号绑定
 
 ```bash
-cloudflared tunnel login              # 浏览器选你要绑的域名
-cloudflared tunnel create storia      # 记下输出的 UUID
+cloudflared tunnel login
 ```
 
-凭据文件落在 `~/.cloudflared/<UUID>.json`。
+执行后终端会打印一个 `https://dash.cloudflare.com/argotunnel?...` 链接。
 
-**4. 配置** `~/.cloudflared/config.yml`：
+- **如果服务器有图形界面**：直接打开。
+- **如果服务器是纯 SSH（更常见）**：把那个 URL **完整复制**到你**本地电脑**的浏览器里打开。
+
+浏览器页面会让你：
+1. 登录 Cloudflare（如果未登录）。
+2. **Select a zone** 下拉选你刚托管的域名 `yourdomain.com` → **Authorize**。
+
+授权成功后服务器终端会自动收到回调并打印类似：
+```
+You have successfully logged in.
+If you wish to copy your credentials to a server, they have been saved to:
+/home/you/.cloudflared/cert.pem
+```
+
+> 这个 `cert.pem` 是你账号级别的凭据，只用于"创建 Tunnel"这一步，**不要外传**。
+
+#### 步骤 4. 创建 Tunnel 并记下 UUID
+
+```bash
+cloudflared tunnel create storia
+```
+
+输出形如：
+```
+Tunnel credentials written to /home/you/.cloudflared/3f1e0b2c-...-abcdef.json.
+Created tunnel storia with id 3f1e0b2c-aaaa-bbbb-cccc-abcdef012345
+```
+
+把那个 **UUID**（`3f1e0b2c-...`）记下来，后面的 config 文件要用。凭据 JSON 文件落在 `~/.cloudflared/<UUID>.json`，这是 Tunnel **运行时**的凭据，丢了或泄露要 `cloudflared tunnel rotate` 轮换。
+
+#### 步骤 5. 写 Tunnel 配置
+
+新建 `~/.cloudflared/config.yml`（把 `<UUID>` 替换成步骤 4 的 UUID，把 `you` 换成你的用户名，`storia.yourdomain.com` 换成你想用的子域）：
 
 ```yaml
 tunnel: <UUID>
 credentials-file: /home/you/.cloudflared/<UUID>.json
+
 ingress:
+  # 主入口：Storia
   - hostname: storia.yourdomain.com
     service: http://127.0.0.1:7860
+    originRequest:
+      # Storia 用 SSE 推流，这两个超时必须给足
+      connectTimeout: 30s
+      noTLSVerify: true
+  # 必须有的 catch-all，未匹配的 hostname 一律 404
   - service: http_status:404
 ```
 
+#### 步骤 6. 给 Tunnel 绑定公网域名
+
 ```bash
 cloudflared tunnel route dns storia storia.yourdomain.com
-sudo cloudflared --config /home/you/.cloudflared/config.yml service install
-sudo systemctl enable --now cloudflared
 ```
 
-> `cloudflared service install` 默认读 root 的 `~/.cloudflared`。把 config 与 credentials 拷到 `/etc/cloudflared/`，或在安装后修改 systemd 单元的 `ExecStart` 指向你的 config 路径。
+这条命令会在 Cloudflare 上自动创建一条 **CNAME** 记录：`storia` → `<UUID>.cfargotunnel.com`，并打开"Proxied"（橙色云）。回 Cloudflare 控制台 → 你的域名 → **DNS → Records** 应能看到这条记录。
 
-**5. 防火墙：拒绝一切入站**
+> 如果报 `failed to add route: code: 1003`，通常是 NS 还没生效，或者 zone 选错了。等 `dig NS yourdomain.com` 返回 Cloudflare 的 NS 后再试。
+
+#### 步骤 7. 前台冒烟测试
+
+先**别**装 systemd 服务，先前台跑一次确认能通：
+
+```bash
+cloudflared tunnel --config ~/.cloudflared/config.yml run storia
+```
+
+正常输出会有 `Registered tunnel connection`，且至少能看到 2 ~ 4 条 `connIndex=...` 表示和 Cloudflare 多个边缘节点都建好了连接。
+
+**此时换到本地电脑浏览器**，打开 `https://storia.yourdomain.com`——应该能直接看到 Storia 的 UI（**还没配 Access，所以现在全世界都能进**，这就是为什么下一节 L2 必须立刻做）。
+
+确认 OK 后，Ctrl+C 停掉前台进程。
+
+#### 步骤 8. 把 cloudflared 装成 systemd 服务
+
+`cloudflared service install` 默认会找 root 的 `~/.cloudflared/`，但你的 config 和 credentials 在 `/home/you/.cloudflared/` 下。最稳妥的做法是先把它们拷到系统目录：
+
+```bash
+sudo mkdir -p /etc/cloudflared
+sudo cp ~/.cloudflared/config.yml          /etc/cloudflared/config.yml
+sudo cp ~/.cloudflared/<UUID>.json         /etc/cloudflared/<UUID>.json
+# 同步修改 config.yml 里的 credentials-file 路径
+sudo sed -i 's|/home/you/.cloudflared/|/etc/cloudflared/|' /etc/cloudflared/config.yml
+sudo chmod 600 /etc/cloudflared/<UUID>.json
+
+sudo cloudflared --config /etc/cloudflared/config.yml service install
+sudo systemctl enable --now cloudflared
+sudo systemctl status cloudflared          # 应看到 active (running) + 4 个边缘连接
+journalctl -u cloudflared -f               # 实时日志，Ctrl+C 退出
+```
+
+#### 步骤 9. 关掉服务器的 80/443，仅留 SSH
 
 ```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow OpenSSH
 sudo ufw enable
-# 注意：80/443 不要放行。所有 Web 流量走 Tunnel 出站。
+sudo ufw status verbose                    # 确认 80/443 不在放行列表里
 ```
 
-**这一步做完，从公网视角你的机器除了 SSH 没有任何 TCP 端口可见。** 陌生人扫到你的 IP 也只能止步于此。
+**这一步做完，从公网视角你的机器除了 SSH 没有任何 TCP 端口可见。** 用 `https://www.shodan.io/host/<你的IP>` 或者本地另一台机器 `nmap -Pn -p 80,443,7860 <你的IP>` 验证——应该全是 `filtered` 或 `closed`。
 
 ### L2：阻止陌生人通过 Cloudflare 边缘 — Access 策略
 
-Cloudflare 控制台 → Zero Trust → Access → Applications：
+L1 完成后，**任何人输入 `https://storia.yourdomain.com` 都能直接看到 UI**。现在用 Access 在边缘加一道身份验证。
 
-- 类型：**Self-hosted**
-- 应用域名：`storia.yourdomain.com`
-- 策略：`Action: Allow`，规则 `Emails` = 你的邮箱（或 GitHub OAuth、TOTP、Google Workspace 等）
+#### 步骤 10. 首次进入 Zero Trust 并选 Team 名
 
-**做完这步，没通过 Access 验证的请求在边缘就被拦掉**，根本不会进入 Tunnel，更不会到你的进程。
+1. Cloudflare 控制台左侧菜单点 **Zero Trust**（蓝色盾牌图标）。首次进入会让你选一个 **Team name**，这个名字会变成 `<team>.cloudflareaccess.com`——以后所有 Access 登录页都从这里弹。**随便填一个你能记住的英文短词**（不可改）。
+2. 计划选 **Free**（最多 50 个用户，自用够用）。补一张信用卡或 PayPal——Free plan 不会扣费，但卡片是 Cloudflare 的反滥用要求。
 
-> **为什么 A 方案不用 Token？** 身份验证已经被 Cloudflare Access 全权接管，再加 Token 反而让浏览器要多管理一份凭据。如果你想要"双保险"也不是不行，但收益很小，复杂度更高。
+#### 步骤 11. 配置登录身份源（One-Time PIN 最省事）
+
+默认 **One-time PIN**（邮箱验证码）已开启，不需要额外配置。如果你想用 GitHub、Google、Microsoft 等 SSO，走：
+
+- **Zero Trust 控制台 → Settings → Authentication → Login methods → Add new**，按页面提示填 OAuth Client ID / Secret。
+
+本手册以最简的 One-time PIN 为例。
+
+#### 步骤 12. 创建 Access Application
+
+1. **Zero Trust 控制台 → Access → Applications → Add an application**。
+2. 选 **Self-hosted**。
+3. 配置如下字段（其余保持默认）：
+
+   | 字段 | 填什么 |
+   |---|---|
+   | Application name | `Storia` |
+   | Session Duration | `24 hours`（按需调） |
+   | Application domain | Subdomain = `storia`，Domain 下拉选 `yourdomain.com`，Path 留空 |
+   | Identity providers | 勾上 **One-time PIN**（默认已勾） |
+
+   点 **Next**。
+
+4. **Add policy** 页：
+
+   | 字段 | 填什么 |
+   |---|---|
+   | Policy name | `me-only` |
+   | Action | **Allow** |
+   | Session duration | Same as application |
+   | Configure rules → Include → Selector | **Emails** |
+   | Value | 你的邮箱（可点 `+` 加多个） |
+
+   点 **Next** → **Next** → **Add application**。
+
+#### 步骤 13. 验证 Access 已生效
+
+1. 用**无痕窗口**打开 `https://storia.yourdomain.com`。
+2. 应该立刻被重定向到 `<team>.cloudflareaccess.com` 的登录页，要求输入邮箱。
+3. 输入步骤 12 配置的邮箱 → 收到 6 位验证码 → 输入 → 进入 Storia UI。
+4. **再换一个不在白名单里的邮箱试一次**——应停在登录页提示 `That account does not have access`，并且**永远进不到 Storia**。
+
+**做完这一步，没通过 Access 验证的请求在 Cloudflare 边缘就被拦掉，根本不会进入 Tunnel，更不会到你的进程。**
+
+> **为什么 A 方案不用 Token？** 身份验证已经被 Cloudflare Access 全权接管，再加 Token 反而让浏览器要多管理一份凭据。如果你想要"双保险"也不是不行，但收益很小、复杂度更高。
+
+#### 步骤 14（可选，强烈推荐）. 加一条 WAF 规则只允许 Access 流量
+
+L2 已经够用，但如果有人拿到 Cloudflare 内部 Tunnel CNAME（`<UUID>.cfargotunnel.com`）直接打你的 hostname，理论上仍要绕一道 Access。再加一道 WAF Custom Rule 兜底：
+
+1. Cloudflare 控制台（不是 Zero Trust）→ 你的域名 → **Security → WAF → Custom rules → Create rule**。
+2. Rule name：`block-non-access-storia`
+3. Field = `Hostname`，Operator = `equals`，Value = `storia.yourdomain.com`
+4. **AND** → Field = `cf.access.authenticated`，Operator = `equals`，Value = `false`
+5. Action = **Block**
+6. Deploy.
+
+这样即使有人绕过 Access 直连边缘也会被 WAF 拦。
+
+#### Cloudflare 部分常见坑速查
+
+| 现象 | 原因 | 处置 |
+|---|---|---|
+| `cloudflared tunnel login` 浏览器打开后选不到域名 | NS 还没切到 Cloudflare / zone 状态不是 Active | 等 NS 生效，`dig NS yourdomain.com` 应返回 Cloudflare 的 NS |
+| `route dns` 报错 `An A, AAAA, or CNAME record with that host already exists` | DNS 已有同名记录 | Cloudflare DNS 页面删掉旧的 `storia` 记录，再跑 `route dns` |
+| 浏览器访问报 `Error 1033 Argo Tunnel error` | 服务器上 cloudflared 没跑 / 没连上 | `sudo systemctl status cloudflared`、`journalctl -u cloudflared -n 100` |
+| 浏览器访问报 `Error 502 Bad Gateway` | cloudflared 连上了边缘，但回源 `127.0.0.1:7860` 失败 | 检查 storia 服务：`sudo systemctl status storia`、`curl http://127.0.0.1:7860/api/health` |
+| SSE 流式输出几秒就断 | `originRequest` 超时太短 | config.yml 里加 `connectTimeout: 30s` 并把 Cloudflare 仪表 → 你的域名 → **Network → WebSockets** 打开 |
+| Access 登录死循环 | 浏览器 cookie 异常 / 第三方 cookie 被拦 | 清 `<team>.cloudflareaccess.com` 与你的域名的 cookie，重试 |
 
 ---
 
