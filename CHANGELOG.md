@@ -3,6 +3,24 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.6] - 2026-05-22
+
+### Changed — docs only
+
+延续 v2.4.5，把 `docs/DEPLOY-PUBLIC.md` 第四章「nginx + Token + IP 白名单」也扩写成可逐步操作的实操指南：
+
+- 新增 **准备清单**：A 记录配置、`dig` 验证、固定出口 IP 检测、`curl ifconfig.me`。
+- **L1（nginx + 防火墙 + IP 白名单）拆成 5 个步骤**：先写最小 HTTP 站点冒烟、再用 certbot 自动签 SSL、最后才补 SSE / 上传上限 / `allow` 白名单——避免一次性堆完整 nginx 配置导致新手定位不到错。
+- 每步都给 **验证命令**：在白名单内访问 200、切 4G 访问 403、`certbot renew --dry-run`、`ss -tlnp | grep 7860`。
+- **L2（Token）拆成 4 个步骤**：生成 → 写 `.env` → 不带 / 带 Token 两路 curl 验证 → DevTools 设 localStorage。
+- 新增 **可选步骤 10**：fail2ban 拦 403/401 暴力扫描，给出 `/etc/fail2ban/jail.d/nginx-storia.conf` 完整片段。
+- 新增 **nginx + Token 部分常见坑速查表**：覆盖 certbot DNS 失败 / 502 / 白名单误封 / Token header 名打错 / CORS 冲突 / SSE 断流 / 证书续期失败。
+
+### Files
+- 修改：`docs/DEPLOY-PUBLIC.md`（+150 / -16）
+
+---
+
 ## [2.4.5] - 2026-05-22
 
 ### Changed — docs only

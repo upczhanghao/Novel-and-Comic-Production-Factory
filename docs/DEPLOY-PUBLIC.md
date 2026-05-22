@@ -361,23 +361,83 @@ L2 已经够用，但如果有人拿到 Cloudflare 内部 Tunnel CNAME（`<UUID>
 
 ## 四、防护方案 B：nginx + Token + IP 白名单（备用）
 
-适合不愿走 Cloudflare 的人，但配置项多更易出错，也无法避免你的 IP 被扫描器看到。
+适合不愿走 Cloudflare 的人，但配置项多更易出错，也**无法避免你的 IP 被扫描器看到**——证书签发会进 CT 日志，你的子域和 IP 一定会被发现。这条路线的核心思想是「让陌生人看得到但进不去」，靠两道闸：**网络层 IP 白名单 + 应用层 Token**。
 
-### L1：让陌生人到不了进程 — 防火墙 + nginx 反代
+### 准备清单（在开始之前确认你有）
 
-**装 nginx + 自动签证书**：
+- 一个解析到你服务器公网 IP 的子域 `storia.yourdomain.com`：登录你的 DNS 服务商，加一条 **A 记录**，Name = `storia`，Value = `<你的服务器公网 IP>`，TTL 5 分钟。`dig +short storia.yourdomain.com` 能返回该 IP 后再继续。
+- 服务器已能跑 Storia，`curl http://127.0.0.1:7860/api/health` 返回 `{"status":"ok"}`。
+- **强烈建议但非必须**：一个固定的家庭/办公网络出口 IP（用来做 nginx `allow` 白名单）。`curl ifconfig.me` 在你常用的网络下测一下；如果是动态 IP，可改用 [DDNS + nginx geo 模块] 或退回纯 Token 模式，但**风险显著上升**。
+
+### L1：让陌生人到不了进程 — nginx 反代 + 防火墙 + IP 白名单
+
+#### 步骤 1. 安装 nginx 与 certbot
 
 ```bash
+sudo apt update
 sudo apt install -y nginx certbot python3-certbot-nginx
+nginx -v && certbot --version       # 确认安装成功
+```
+
+#### 步骤 2. 防火墙：只放行 SSH 与 80/443
+
+```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'                                  # 仅放行 80 + 443
+sudo ufw allow 'Nginx Full'                # 自动放行 80 + 443
 sudo ufw enable
-sudo certbot --nginx -d storia.yourdomain.com                # 自动签 + 改 nginx 配置
+sudo ufw status verbose                    # 确认 7860 不在放行列表里
 ```
 
-`/etc/nginx/sites-available/storia`（在 certbot 自动生成基础上微调）：
+> Storia 自身只听 `127.0.0.1:7860`（systemd 单元里 `--host 127.0.0.1`），所以即使你没装 ufw，公网也连不到 7860。但**仍然要装 ufw**——它是兜底，且能拦掉其他你可能临时起的端口（debug 服务、容器映射等）。
+
+#### 步骤 3. 写一份**最小** nginx 站点（先不要 SSL，让 certbot 自动加）
+
+新建 `/etc/nginx/sites-available/storia`：
+
+```nginx
+server {
+    listen 80;
+    server_name storia.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:7860;
+    }
+}
+```
+
+启用并 reload：
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/storia /etc/nginx/sites-enabled/storia
+sudo rm -f /etc/nginx/sites-enabled/default      # 防止默认站点抢 80 端口
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**冒烟测试**：在**本地电脑**浏览器打开 `http://storia.yourdomain.com`，应该能看到 Storia UI（**此时还没 SSL，也还没鉴权，全公网都能进**，下面立刻补）。
+
+> 如果浏览器报 `502 Bad Gateway`：检查 Storia 在跑 (`sudo systemctl status storia`) 且监听 `127.0.0.1:7860`。
+> 如果报 `404 nginx` 或连不上：检查 DNS 是否生效 (`dig +short storia.yourdomain.com`) 与 ufw 是否放行了 80。
+
+#### 步骤 4. 用 certbot 自动签 Let's Encrypt 证书
+
+```bash
+sudo certbot --nginx -d storia.yourdomain.com
+```
+
+按提示输入邮箱（用于到期通知）、同意条款。最后一项选 **2: Redirect**——certbot 会自动加一段 `listen 443 ssl` server 块并把 80 → 443 强跳。
+
+完成后再次访问 `https://storia.yourdomain.com` 应能看到 UI 且地址栏挂着锁。证书有效期 90 天，certbot 装了 systemd timer 自动续期：
+
+```bash
+systemctl list-timers | grep certbot       # 应看到 certbot.timer
+sudo certbot renew --dry-run               # 模拟续期，确认能跑通
+```
+
+#### 步骤 5. 强化 nginx：SSE 长连接 + 上传上限 + IP 白名单
+
+certbot 改完之后，重新打开 `/etc/nginx/sites-available/storia`，把 443 server 块替换成下面这版（**保留 certbot 已经写好的 `ssl_certificate` 两行**）：
 
 ```nginx
 server {
@@ -387,9 +447,12 @@ server {
     ssl_certificate     /etc/letsencrypt/live/storia.yourdomain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/storia.yourdomain.com/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
 
-    # ★ L1 加强：固定 IP 白名单（强烈建议，能配就配）
+    # ★ L1 关键：固定 IP 白名单（强烈建议，能配就配）
+    # 取消下面三行的注释，并把 1.2.3.4 换成你 curl ifconfig.me 拿到的 IP
     # allow 1.2.3.4;        # 你家宽带固定 IP / 公司出口
+    # allow 5.6.7.8;        # 可多写几条
     # deny all;
 
     # SSE / 长连接所必须
@@ -402,9 +465,12 @@ server {
     proxy_buffering off;
     proxy_read_timeout 3600s;
 
+    # 知识库导入有大文件
     client_max_body_size 64m;
 
-    location / { proxy_pass http://127.0.0.1:7860; }
+    location / {
+        proxy_pass http://127.0.0.1:7860;
+    }
 }
 
 server {
@@ -415,36 +481,104 @@ server {
 ```
 
 ```bash
-sudo ln -sf /etc/nginx/sites-available/storia /etc/nginx/sites-enabled/storia
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-certbot 已经写好自动续期 timer，`systemctl list-timers | grep certbot` 可以看到。
+**验证 IP 白名单**：
+- 在白名单 IP 上访问 `https://storia.yourdomain.com` → 应正常打开。
+- 拿手机切到 **4G/5G**（出口 IP 不在白名单）访问同一 URL → 应返回 `403 Forbidden`。
 
-> **没有 IP 白名单的 B 方案有多脆？** 任何人输入 `https://storia.yourdomain.com` 就能打开登录界面。Token 是你唯一的身份验证。如果浏览器 localStorage 在公共电脑被复制、或前端有个未发现的 XSS，Token 就裸奔。所以**强烈建议至少配一条 `allow` 规则**。
+> **没有 IP 白名单的 B 方案有多脆？** 任何人输入 `https://storia.yourdomain.com` 就能打开登录界面。Token 是你**唯一**的身份验证。如果浏览器 localStorage 在公共电脑被复制、或前端有个未发现的 XSS，Token 就裸奔。**所以这一步几乎不可省。** 真的没固定 IP，至少考虑 DDNS + nginx 动态白名单脚本。
 
 ### L2：阻止陌生人调用接口 — API Token
 
-编辑 `/opt/storia/.env`，取消注释：
+L1 阻断了陌生 IP 的网络流量；L2 是给"通过 IP 白名单但没你授权"的人再加一道（比如你公司其他同事和你共用出口 IP）。
+
+#### 步骤 6. 生成强随机 Token
 
 ```bash
-NOVELWRITER_API_TOKEN=$(openssl rand -hex 32)         # 在 shell 里跑，把输出粘进去
+openssl rand -hex 32
+# 输出 64 个十六进制字符的字符串，全选复制
+```
+
+#### 步骤 7. 写到 `.env` 并重启
+
+编辑 `/opt/storia/.env`，把方案 A 时注释掉的两行取消注释并填好：
+
+```bash
+NOVELWRITER_HOST=127.0.0.1
+NOVELWRITER_PORT=7860
+NOVELWRITER_API_TOKEN=<步骤 6 拿到的 64 位字符串>
 NOVELWRITER_CORS_ORIGINS=https://storia.yourdomain.com
 ```
 
 ```bash
+sudo chmod 600 /opt/storia/.env
 sudo systemctl restart storia
+journalctl -u storia -n 20                 # 确认没 ERROR、监听 127.0.0.1:7860
 ```
 
-浏览器首次打开 `https://storia.yourdomain.com`，DevTools console 执行：
+> ⚠️ **`NOVELWRITER_API_TOKEN` 与 `NOVELWRITER_CORS_ORIGINS=*` 同时设置时，进程会拒绝启动** —— 既要鉴权又要任意 Origin 是矛盾配置。报错信息会在 `journalctl -u storia` 里指出。
+
+#### 步骤 8. 验证 Token 已生效
+
+未带 Token 直接 curl：
+
+```bash
+curl -i https://storia.yourdomain.com/api/health
+# 期望 401 Unauthorized（如果你在白名单 IP 上跑；否则会先被 nginx 403）
+```
+
+带 Token：
+
+```bash
+curl -i -H "X-NovelWriter-Token: <你的 token>" https://storia.yourdomain.com/api/health
+# 期望 200 OK + {"status":"ok"}
+```
+
+#### 步骤 9. 让浏览器 UI 带上 Token
+
+浏览器打开 `https://storia.yourdomain.com`（此时 UI 会报 401，正常）。F12 打开 DevTools → Console，粘贴执行：
 
 ```js
 localStorage.setItem('novelwriter_api_token', '<你的 token>')
 ```
 
-刷新即可。
+刷新页面，UI 应正常加载。Token 落在浏览器 localStorage，下次直接访问无需再设。
 
-> ⚠️ `NOVELWRITER_API_TOKEN` 与 `NOVELWRITER_CORS_ORIGINS=*` 同时设置时，进程会拒绝启动 —— 既要鉴权又要任意 Origin 是矛盾配置。
+> **Token 泄露怎么办？** `openssl rand -hex 32` 重新生成 → 改 `.env` → `sudo systemctl restart storia`。旧 Token 立刻失效，所有浏览器需要重新 `localStorage.setItem`。
+
+#### 步骤 10（可选，强烈推荐）. fail2ban 拦暴力扫描
+
+即使有 IP 白名单 + Token，扫描器仍会消耗 nginx 资源。装 fail2ban 对 403/401 频繁的 IP 自动封 IP：
+
+```bash
+sudo apt install -y fail2ban
+sudo tee /etc/fail2ban/jail.d/nginx-storia.conf > /dev/null <<'EOF'
+[nginx-storia]
+enabled  = true
+filter   = nginx-http-auth
+port     = http,https
+logpath  = /var/log/nginx/error.log
+maxretry = 5
+findtime = 600
+bantime  = 3600
+EOF
+sudo systemctl restart fail2ban
+sudo fail2ban-client status nginx-storia
+```
+
+#### nginx + Token 部分常见坑速查
+
+| 现象 | 原因 | 处置 |
+|---|---|---|
+| `certbot --nginx` 报 `Connection refused` 或 `DNS problem` | DNS 未生效 / 80 端口未放行 | `dig +short storia.yourdomain.com` 确认指向服务器；`sudo ufw status` 确认放行 'Nginx Full' |
+| `502 Bad Gateway` | Storia 没跑或没监听 127.0.0.1:7860 | `sudo systemctl status storia`、`ss -tlnp \| grep 7860` |
+| 在白名单 IP 上也返回 `403` | nginx 没 reload，或 `allow` 写的 IP 不对 | `curl ifconfig.me` 再核对一次出口 IP；`sudo nginx -t && sudo systemctl reload nginx` |
+| API 全返回 `401` 但 Token 是对的 | header 名写错（应是 `X-NovelWriter-Token`，区分横杠），或 localStorage key 拼错（应是 `novelwriter_api_token`） | 在 DevTools → Network 看实际请求头；清掉 localStorage 重设 |
+| 进程启动失败，journal 里报 `CORS_ORIGINS=\* with API_TOKEN` | `.env` 里 CORS 配了 `*` 又开了 Token | 把 `NOVELWRITER_CORS_ORIGINS` 改成你的具体域名 |
+| SSE 流式输出几秒就断 | nginx `proxy_read_timeout` 太短 / `proxy_buffering` 没关 | 检查 443 server 块里 `proxy_read_timeout 3600s;` 与 `proxy_buffering off;` 都在 |
+| Let's Encrypt 证书续期失败 | 80 端口被关 / DNS 改过指向 | `sudo certbot renew --dry-run` 重现；保持 80 在 ufw 放行（80 用于 HTTP-01 challenge） |
 
 ---
 
