@@ -18,9 +18,10 @@ from api.image_service import (
     list_image_records,
     list_image_prompt_queue,
     save_generated_image,
+    save_edited_image,
     safe_served_image_path,
 )
-from api.schemas import ImageGenerateRequest, ImagePromptImportRequest, ImageBatchDeleteRequest
+from api.schemas import ImageGenerateRequest, ImageEditRequest, ImagePromptImportRequest, ImageBatchDeleteRequest
 from api.security import normalize_project_path
 
 router = APIRouter(tags=["images"])
@@ -50,6 +51,53 @@ def generate_image(body: ImageGenerateRequest):
     }
     add_image_record(body.filepath, payload)
     return {"message": "✅ 图片已生成", **payload}
+
+
+@router.post("/images/edit")
+def edit_image(body: ImageEditRequest):
+    prompt = body.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="提示词不能为空")
+    config = _get_image_config(body.config_name)
+
+    source_bytes: bytes = b""
+    source_filename = body.source_filename or "source.png"
+    if body.source_image_path:
+        abs_path = safe_served_image_path(body.source_image_path)
+        with open(abs_path, "rb") as f:
+            source_bytes = f.read()
+        source_filename = os.path.basename(abs_path)
+    elif body.source_image_b64:
+        import base64
+        raw = body.source_image_b64
+        if "," in raw and raw.lstrip().startswith("data:"):
+            raw = raw.split(",", 1)[1]
+        try:
+            source_bytes = base64.b64decode(raw, validate=False)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"source_image_b64 解码失败：{exc}") from exc
+    else:
+        raise HTTPException(status_code=400, detail="必须提供 source_image_path 或 source_image_b64 其中之一")
+
+    if not source_bytes:
+        raise HTTPException(status_code=400, detail="原图内容为空")
+
+    out_path = save_edited_image(
+        config,
+        prompt,
+        source_bytes,
+        source_filename,
+        body.filepath,
+        source_id=body.source_id,
+    )
+    payload = {
+        **image_response_payload(out_path, prompt, body.config_name, config),
+        "id": os.path.splitext(os.path.basename(out_path))[0],
+        "source_type": "edit",
+        "source_id": body.source_id,
+    }
+    add_image_record(body.filepath, payload)
+    return {"message": "✅ 图片已编辑", **payload}
 
 
 @router.get("/images/list")

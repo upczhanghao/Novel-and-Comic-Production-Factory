@@ -44,6 +44,12 @@ export const navRoutes: RouteRecordRaw[] = [
     meta: { title: '图片生成', icon: 'images', group: 'create', level: 'beginner', bottomNav: true },
   },
   {
+    path: '/images/edit',
+    name: 'image-edit',
+    component: () => import('@/views/ImageEditView.vue'),
+    meta: { title: '图片编辑', icon: 'images', group: 'create', level: 'beginner' },
+  },
+  {
     path: '/reader',
     name: 'reader',
     component: () => import('@/views/ReaderView.vue'),

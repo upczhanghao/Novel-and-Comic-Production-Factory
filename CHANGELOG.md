@@ -3,6 +3,32 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.7] - 2026-05-22
+
+### Added — 图片编辑
+
+基于 OpenAI / MirrorStages 的 `/v1/images/edits` 接口，支持对已有图片用文本提示词重写整图（MVP，不含 mask 局部重绘）。两家厂商共用 OpenAI Python SDK，仅按 `provider` 切换 `base_url`，零新依赖。
+
+- **后端**：
+  - `api/image_service.py` 新增 `edit_image_bytes()` / `save_edited_image()`，复用现有 `extract_image_bytes` 解码 b64_json / url 两种返回格式。
+  - `api/schemas.py` 新增 `ImageEditRequest`，支持 `source_image_path`（服务器侧已有图）或 `source_image_b64`（前端本地上传）二选一。
+  - `api/routers/images.py` 新增 `POST /api/images/edit`；`source_image_path` 走 `safe_served_image_path` 防越权。
+- **前端入口**：
+  - `ImageView` 详情卡新增「编辑」按钮，弹窗输入新 prompt 后直接调用 `/api/images/edit`，结果回到图片库。
+  - 新增 `/images/edit` 独立页面（`ImageEditView.vue`）：本地上传任意 PNG/JPEG/WebP，原图与编辑结果并排展示，支持下载。
+- **复用现有图库**：编辑产物落到 `output/<project>/images/...`，文件名前缀 `edit_`，自动入 `generated_records.json`，与生成图共享列表/批量删除/筛选。
+
+### Fixed — UI
+
+- **漫剧制作模块左右两列高度不齐**：去掉 aside 的 `position: sticky` 与内置滚动条，整页一起滚动，左侧三块面板按自然高度完整铺开（`ManjuView.vue` + `main.css`）。
+- **生成结果文字看不清**：`StreamOutput.vue` 容器从深棕底 + 米白字改为浅灰底 (`--color-parchment-dark`) + 墨色字 (`--color-ink`)，与全站米白主题对比一致；错误/未保存徽标改深色调。该组件被工坊、风格、一致性、漫剧四视图共用，一并受益。
+
+### Files
+- 新增：`frontend/src/views/ImageEditView.vue`
+- 修改：`api/image_service.py`、`api/routers/images.py`、`api/schemas.py`、`frontend/src/api/client.ts`、`frontend/src/components/StreamOutput.vue`、`frontend/src/router/index.ts`、`frontend/src/styles/main.css`、`frontend/src/views/ImageView.vue`、`frontend/src/views/ManjuView.vue`
+
+---
+
 ## [2.4.6] - 2026-05-22
 
 ### Changed — docs only

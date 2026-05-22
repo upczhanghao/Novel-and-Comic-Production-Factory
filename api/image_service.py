@@ -394,3 +394,83 @@ def save_generated_image(
     with open(out_path, "wb") as f:
         f.write(image_bytes)
     return out_path
+
+
+def _openai_image_edit_params(config: dict[str, Any], prompt: str) -> dict[str, Any]:
+    """与 _openai_image_params 类似，但只保留 edits 端点支持的参数。
+
+    OpenAI / MirrorStages 的 /images/edits 都接受 model / prompt / image / n / size，
+    OpenAI 还支持 mask / response_format / quality。
+    """
+    model = config.get("model") or "gpt-image-1"
+    params: dict[str, Any] = {
+        "model": model,
+        "prompt": prompt,
+        "n": 1,
+    }
+    size = config.get("size") or "1024x1536"
+    if size:
+        params["size"] = size
+    if model.startswith("gpt-image"):
+        quality = config.get("quality")
+        if quality:
+            params["quality"] = quality
+    else:
+        params["response_format"] = "b64_json"
+    return params
+
+
+def edit_image_bytes(config: dict[str, Any], prompt: str, source_image_bytes: bytes, source_filename: str = "source.png") -> bytes:
+    """对一张已有图片做文本提示编辑。两家厂商都走 OpenAI SDK 的 client.images.edit。"""
+    provider = (config.get("provider") or "openai").strip().lower()
+    if provider not in {"openai", "mirrorstages"}:
+        raise HTTPException(status_code=400, detail="provider 只能是 openai/mirrorstages")
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail="缺少 openai 依赖，请先安装 requirements.txt") from exc
+
+    api_key = config.get("api_key", "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="图片接口缺少 API Key")
+    default_base_url = MIRRORSTAGES_OPENAI_BASE_URL if provider == "mirrorstages" else "https://api.openai.com/v1"
+    base_url = normalize_mirrorstages_base_url(config.get("base_url") or default_base_url) if provider == "mirrorstages" else (config.get("base_url") or default_base_url)
+    client = OpenAI(api_key=api_key, base_url=base_url)
+
+    # openai SDK 接受 (filename, BytesIO, mime) 元组作为 image 参数
+    import io
+    import mimetypes
+    mime, _ = mimetypes.guess_type(source_filename)
+    image_tuple = (source_filename, io.BytesIO(source_image_bytes), mime or "image/png")
+    params = _openai_image_edit_params(config, prompt)
+    try:
+        response = client.images.edit(image=image_tuple, **params)
+    except Exception as exc:
+        provider_name = "MirrorStages" if provider == "mirrorstages" else "OpenAI"
+        raise HTTPException(status_code=502, detail=f"{provider_name} 图片编辑失败：{exc}") from exc
+    image_bytes = extract_image_bytes(response.model_dump() if hasattr(response, "model_dump") else response)
+    if not image_bytes:
+        raise HTTPException(status_code=502, detail="图片编辑接口未返回图片数据")
+    return image_bytes
+
+
+def save_edited_image(
+    config: dict[str, Any],
+    prompt: str,
+    source_image_bytes: bytes,
+    source_filename: str,
+    filepath: str,
+    source_type: str = "edit",
+    source_id: str = "",
+    group_by_project: bool = True,
+) -> str:
+    image_bytes = edit_image_bytes(config, prompt, source_image_bytes, source_filename)
+    ext = (config.get("output_format") or "png").lower().lstrip(".")
+    if ext == "jpg":
+        ext = "jpeg"
+    safe_source = re.sub(r"[^A-Za-z0-9._-]+", "_", source_id or "edit").strip("_") or "edit"
+    filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_edit_{safe_source}.{ext}"
+    out_path = os.path.join(images_dir(filepath, group_by_project=group_by_project), filename)
+    with open(out_path, "wb") as f:
+        f.write(image_bytes)
+    return out_path

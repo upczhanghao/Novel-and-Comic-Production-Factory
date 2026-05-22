@@ -519,6 +519,21 @@ class ImageGenerateRequest(BaseModel):
     source_id: str = ""
 
 
+class ImageEditRequest(BaseModel):
+    """通过 OpenAI / MirrorStages /images/edits 接口对已有图片做文本提示重写。
+
+    source_image_path 是服务器侧已有图片路径（例如 /images/file?path=xxx 暴露过的），
+    或 source_image_b64 直接传 base64 编码内容（前端本地上传场景）。两者择一。
+    """
+    config_name: str
+    prompt: str
+    filepath: str = "./output"
+    source_image_path: str = ""
+    source_image_b64: str = ""
+    source_filename: str = ""
+    source_id: str = ""
+
+
 class ImagePromptImportRequest(BaseModel):
     filepath: str = "./output"
     items: List[Dict[str, Any]] = []

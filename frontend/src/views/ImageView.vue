@@ -39,6 +39,16 @@ const recordsSelected = ref<string[]>([])
 const cancelBatch = ref(false)
 const concurrency = ref(3)
 
+const editDialog = ref({
+  open: false,
+  running: false,
+  sourcePath: '',
+  sourceFilename: '',
+  sourceId: '',
+  configName: '',
+  prompt: '',
+})
+
 const filepath = computed(() => projectStore.filepath || './output')
 const canGenerate = computed(
   () => Boolean(selectedConfig.value && positivePrompt.value.trim() && !generating.value),
@@ -311,6 +321,56 @@ async function retryRecord(record: ImageRecord) {
   }
 }
 
+function openEditDialog(record: ImageRecord) {
+  if (!record?.path) {
+    feedback.warning('该记录缺少服务器路径，无法编辑')
+    return
+  }
+  editDialog.value = {
+    open: true,
+    running: false,
+    sourcePath: record.path,
+    sourceFilename: record.filename || '',
+    sourceId: record.id || '',
+    configName: record.config_name && configStore.imageChoices.includes(record.config_name)
+      ? record.config_name
+      : selectedConfig.value || configStore.imageChoices[0] || '',
+    prompt: '',
+  }
+}
+
+function closeEditDialog() {
+  if (editDialog.value.running) return
+  editDialog.value.open = false
+}
+
+async function submitEdit() {
+  const dlg = editDialog.value
+  const prompt = dlg.prompt.trim()
+  if (!prompt || !dlg.configName || !dlg.sourcePath) return
+  dlg.running = true
+  const taskId = `image-edit-${dlg.sourceId || 'src'}-${Date.now()}`
+  tasks.register(taskId, `编辑 ${dlg.sourceFilename || dlg.sourceId}`)
+  try {
+    await imagesApi.edit({
+      config_name: dlg.configName,
+      prompt,
+      filepath: filepath.value,
+      source_image_path: dlg.sourcePath,
+      source_id: dlg.sourceId,
+    })
+    tasks.finish(taskId, 'done')
+    feedback.success('✅ 图片已编辑')
+    dlg.open = false
+    await loadGallery()
+  } catch (e) {
+    tasks.finish(taskId, 'error')
+    feedback.error('编辑失败', (e as Error).message)
+  } finally {
+    dlg.running = false
+  }
+}
+
 async function batchRetryRecords(records: ImageRecord[]) {
   const usable = records.filter((r) => r.prompt)
   if (!usable.length) {
@@ -511,10 +571,35 @@ onMounted(async () => {
           <div class="flex gap-2">
             <a :href="currentImage.download_url || currentImage.url" target="_blank" class="flex-1 text-center px-3 py-1.5 rounded-md border border-[var(--color-parchment-darker)] text-xs bg-white">下载</a>
             <button type="button" class="flex-1 px-3 py-1.5 rounded-md border border-[var(--color-parchment-darker)] text-xs bg-white" @click="retryRecord(currentImage)">重试</button>
+            <button type="button" class="flex-1 px-3 py-1.5 rounded-md border border-[var(--color-parchment-darker)] text-xs bg-white" @click="openEditDialog(currentImage)">编辑</button>
           </div>
         </div>
       </aside>
     </section>
+
+    <!-- 图片编辑对话框（MVP：纯文本提示词重写） -->
+    <div v-if="editDialog.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @click.self="closeEditDialog">
+      <div class="bg-white rounded-lg shadow-xl w-[520px] max-w-[92vw] p-5 space-y-3">
+        <div class="text-base font-semibold text-[var(--color-ink)]">编辑图片</div>
+        <div class="text-xs text-[var(--color-ink-light)] break-all">原图：{{ editDialog.sourceFilename }}</div>
+        <div>
+          <label class="block text-xs text-[var(--color-ink-light)] mb-1">编辑用配置（默认沿用编辑专用厂商）</label>
+          <select v-model="editDialog.configName" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
+            <option v-for="c in configStore.imageChoices" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-[var(--color-ink-light)] mb-1">编辑提示词</label>
+          <textarea v-model="editDialog.prompt" rows="4" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm resize-y" placeholder="例如：把猫加上一顶红色礼帽，保持背景与画风不变" />
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <button type="button" class="px-3 py-1.5 rounded-md border border-[var(--color-parchment-darker)] text-sm" @click="closeEditDialog" :disabled="editDialog.running">取消</button>
+          <button type="button" class="px-4 py-1.5 rounded-md text-sm font-semibold disabled:opacity-50" style="background-color: var(--color-leather); color: var(--color-parchment)" :disabled="editDialog.running || !editDialog.prompt.trim() || !editDialog.configName" @click="submitEdit">
+            {{ editDialog.running ? '编辑中...' : '提交' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 

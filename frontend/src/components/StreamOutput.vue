@@ -91,7 +91,7 @@ watch(
   <div
     ref="containerRef"
     class="relative rounded-lg border border-[var(--color-parchment-darker)] font-mono text-sm overflow-y-auto"
-    style="min-height: 160px; max-height: 70vh; background-color: var(--color-spine); color: var(--color-parchment)"
+    style="min-height: 160px; max-height: 70vh; background-color: var(--color-parchment-dark); color: var(--color-ink)"
   >
     <!-- 运行指示条 -->
     <div
@@ -131,10 +131,10 @@ watch(
 
     <div class="p-3">
       <!-- 脏标识：用户编辑后未保存 -->
-      <div v-if="userDirty && !running" class="text-xs text-amber-400 mb-1">● 未保存（生成结果已被编辑，请保存或继续到下一步）</div>
+      <div v-if="userDirty && !running" class="text-xs text-amber-700 mb-1">● 未保存（生成结果已被编辑，请保存或继续到下一步）</div>
 
       <!-- 错误 -->
-      <p v-if="error" class="text-red-400 whitespace-pre-wrap mb-2">{{ error }}</p>
+      <p v-if="error" class="text-red-700 whitespace-pre-wrap mb-2">{{ error }}</p>
 
       <!-- 结果：可编辑模式始终显示 textarea -->
       <textarea
@@ -142,16 +142,16 @@ watch(
         :value="result"
         @input="onEdit($event)"
         class="w-full resize-none outline-none whitespace-pre-wrap leading-relaxed"
-        style="min-height: 300px; background-color: transparent; color: var(--color-parchment); border-color: transparent !important"
+        style="min-height: 300px; background-color: transparent; color: var(--color-ink); border-color: transparent !important"
         :placeholder="placeholder"
       />
       <!-- 结果：只读模式 -->
-      <pre v-else-if="result && !editable" class="whitespace-pre-wrap leading-relaxed" style="color: var(--color-parchment)">{{ result }}</pre>
+      <pre v-else-if="result && !editable" class="whitespace-pre-wrap leading-relaxed" style="color: var(--color-ink)">{{ result }}</pre>
 
       <!-- 占位符 -->
       <p
         v-else-if="!running && !error"
-        class="text-[var(--color-ink-light)] italic opacity-50"
+        class="text-[var(--color-ink-light)] italic"
       >
         {{ placeholder }}
       </p>

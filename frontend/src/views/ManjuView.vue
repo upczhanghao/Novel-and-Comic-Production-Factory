@@ -767,7 +767,7 @@ watch(() => characters.value.running, (running, prev) => {
     <div id="manju-import" class="manju-anchor"></div>
 
     <div class="module-grid wide-aside">
-      <aside class="space-y-4 module-aside-sticky">
+      <aside class="space-y-4">
         <section class="module-panel p-4 space-y-4">
           <div>
             <div class="module-panel-title">输入与模型</div>
@@ -877,7 +877,7 @@ watch(() => characters.value.running, (running, prev) => {
 
         <section class="module-panel p-4">
           <div class="module-panel-title mb-3">章节目录</div>
-          <div class="max-h-80 overflow-auto module-list pr-1">
+          <div class="module-list pr-1">
             <div v-for="ch in chapters" :key="ch.num" class="module-list-item px-3 py-2 text-sm">
               <div class="font-medium text-[var(--color-ink)]">第{{ ch.num }}章 {{ ch.title }}</div>
               <div class="text-xs text-[var(--color-ink-light)]">{{ ch.chars }} 字</div>

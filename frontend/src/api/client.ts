@@ -428,6 +428,7 @@ export const consistencyApi = {
 // ── Images ──────────────────────────────────────────────────────────────────
 export const imagesApi = {
   generate: (body: Record<string, unknown>) => api.post('/images/generate', body, { timeout: 300000 }),
+  edit: (body: Record<string, unknown>) => api.post('/images/edit', body, { timeout: 300000 }),
   list: (filepath: string) => api.get('/images/list', { params: { filepath } }),
   prompts: (filepath: string) => api.get('/images/prompts', { params: { filepath } }),
   importPrompts: (body: Record<string, unknown>) => api.post('/images/prompts/import', body),
