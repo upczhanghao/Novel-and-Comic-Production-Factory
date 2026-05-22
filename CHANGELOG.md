@@ -3,6 +3,25 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.5] - 2026-05-22
+
+### Changed — docs only
+
+把 `docs/DEPLOY-PUBLIC.md` 第三章「Cloudflare Tunnel + Access」从纲要式说明扩写成可逐步操作的实操指南：
+
+- 新增**准备清单**与**术语对齐**：明确区分 `dash.cloudflare.com` 与 Zero Trust 控制台 `one.dash.cloudflare.com`。
+- **L1（Tunnel）拆成 9 个编号步骤**：每步给出完整命令、预期输出、以及阿里云/腾讯云/Namecheap/GoDaddy 等域名注册商的 NS 修改路径；补充纯 SSH 服务器下 `cloudflared tunnel login` 的回调处理。
+- 加入 **前台冒烟测试** 流程：先 `cloudflared tunnel run` 跑通再装 systemd，避免一上来装服务但跑不起来。
+- **systemd 安装的坑**给出完整命令：把 config 与 credentials 拷到 `/etc/cloudflared/` 并 `sed` 同步路径。
+- **L2（Access）拆成 5 个步骤**：含 Team 名、One-time PIN、Application/Policy 的字段级表格，并要求用无痕窗口 + 非白名单邮箱做端到端反向验证。
+- 可选步骤：加 **WAF Custom Rule**（`cf.access.authenticated=false` → Block）防止有人绕过 Access 直连边缘。
+- 新增 **Cloudflare 部分常见坑速查表**：覆盖 1033 / 502 / 1003 / SSE 断流 / Access 登录死循环 / `tunnel login` 选不到域名等。
+
+### Files
+- 修改：`docs/DEPLOY-PUBLIC.md`（+181 / -19）
+
+---
+
 ## [2.4.4] - 2026-05-22
 
 ### Added — 公网部署安全防护
