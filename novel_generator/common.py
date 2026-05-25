@@ -214,6 +214,39 @@ def invoke_with_cleaning(llm_adapter, prompt: str, max_retries: int = 3,
                 _append_prompt_history(prompt, result, model=str(_model),
                                        reasoning=reasoning, call_id=call_id,
                                        status="done", elapsed=elapsed)
+                # token 用量上报（精确数据来自 adapter.last_usage；缺失则用字符估算）
+                try:
+                    from api.usage_meter import record_usage
+                    usage = getattr(llm_adapter, 'last_usage', None) or {}
+                    if usage.get("total_tokens"):
+                        record_usage(
+                            kind="chat",
+                            provider=str(getattr(llm_adapter, 'provider_name', '') or ''),
+                            config_name=str(getattr(llm_adapter, 'config_name', '') or ''),
+                            model=str(_model or ''),
+                            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                            completion_tokens=int(usage.get("completion_tokens") or 0),
+                            total_tokens=int(usage.get("total_tokens") or 0),
+                            elapsed_ms=int(elapsed * 1000),
+                            source=str(usage.get("source") or "exact"),
+                        )
+                    else:
+                        # 兜底估算：prompt ~ 1.8 tok/字符，response ~ 1.5 tok/字符（中文经验值）
+                        pt_est = int(prompt_chars * 1.8)
+                        ct_est = int(result_len * 1.5)
+                        record_usage(
+                            kind="chat",
+                            provider=str(getattr(llm_adapter, 'provider_name', '') or ''),
+                            config_name=str(getattr(llm_adapter, 'config_name', '') or ''),
+                            model=str(_model or ''),
+                            prompt_tokens=pt_est,
+                            completion_tokens=ct_est,
+                            total_tokens=pt_est + ct_est,
+                            elapsed_ms=int(elapsed * 1000),
+                            source="estimated",
+                        )
+                except Exception:
+                    pass
                 return result
             logging.warning(f"[invoke] 第 {retry_count + 1}/{max_retries} 次调用返回空结果, "
                             f"耗时={elapsed:.1f}s, 将重试...")

@@ -459,6 +459,7 @@ class ManjuGenerateRequest(BaseModel):
     shots_per_chapter: int = 12
     visual_style: str = "国漫竖屏短剧，电影级构图，统一角色设定，高细节，适合文生图"
     extra_guidance: str = ""
+    full_scan: bool = False
 
 
 class ManjuScriptAdaptRequest(BaseModel):
@@ -467,6 +468,9 @@ class ManjuScriptAdaptRequest(BaseModel):
     start_chapter: int = 1
     end_chapter: Optional[int] = None
     target_chapters: int = 12
+    target_scenes: int = 30
+    target_leads: int = 2
+    target_supporting_cast: int = 6
     rename_characters: bool = False
     adaptation_level: str = "中度改编"
     episode_duration: str = "3-5分钟"

@@ -54,6 +54,12 @@ class BaseLLMAdapter:
     统一的 LLM 接口基类，为不同后端（OpenAI、Ollama、ML Studio、Gemini等）提供一致的方法签名。
     """
     last_reasoning: str = ""  # 最近一次调用的思考过程（仅思考模型会填充）
+    # 最近一次调用的 token usage；调用方读后由 invoke_with_cleaning 上报到 usage_meter。
+    # 形如 {"prompt_tokens": int, "completion_tokens": int, "total_tokens": int, "source": "exact"|"estimated"}
+    last_usage: Optional[dict] = None
+    # 元信息，便于上报
+    provider_name: str = ""
+    config_name: str = ""
 
     def invoke(self, prompt: str, system_message: str = "") -> str:
         raise NotImplementedError("Subclasses must implement .invoke(prompt) method.")
@@ -76,22 +82,69 @@ class BaseLLMAdapter:
                 user_msg = m["content"]
         yield from self.invoke_stream(user_msg, system_message=system_msg)
 
-def _openai_chat_stream_helper(client, model_name, messages, max_tokens, temperature, timeout):
+    def _capture_response_usage(self, response) -> None:
+        """通用 usage 捕获——按 OpenAI / LangChain / Gemini 三种格式依次尝试。"""
+        try:
+            from api.usage_meter import (
+                extract_openai_usage, extract_langchain_usage, extract_gemini_usage,
+            )
+            for fn in (extract_openai_usage, extract_langchain_usage, extract_gemini_usage):
+                try:
+                    u = fn(response)
+                    if u:
+                        self.last_usage = {**u, "source": "exact"}
+                        return
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+def _capture_chunk_usage(adapter: "BaseLLMAdapter", chunk) -> None:
+    """从流式 chunk 中提取 usage（仅最后一帧通常携带，需 include_usage=True）。"""
+    if adapter is None:
+        return
+    u = getattr(chunk, "usage", None)
+    if u is None:
+        return
+    try:
+        pt = int(getattr(u, "prompt_tokens", 0) or 0)
+        ct = int(getattr(u, "completion_tokens", 0) or 0)
+        tt = int(getattr(u, "total_tokens", 0) or (pt + ct))
+        if pt or ct or tt:
+            adapter.last_usage = {
+                "prompt_tokens": pt,
+                "completion_tokens": ct,
+                "total_tokens": tt,
+                "source": "exact",
+            }
+    except Exception:
+        pass
+
+
+def _openai_chat_stream_helper(client, model_name, messages, max_tokens, temperature, timeout, adapter: "BaseLLMAdapter | None" = None):
     """OpenAI 兼容接口的通用多轮对话流式调用辅助函数。"""
-    stream = client.chat.completions.create(
+    kwargs = dict(
         model=model_name,
         messages=messages,
         max_tokens=max_tokens,
         temperature=temperature,
         timeout=timeout,
         stream=True,
+        stream_options={"include_usage": True},
     )
+    try:
+        stream = client.chat.completions.create(**kwargs)
+    except TypeError:
+        # 兼容老版本 SDK / 不支持 stream_options 的中转
+        kwargs.pop("stream_options", None)
+        stream = client.chat.completions.create(**kwargs)
     for chunk in stream:
-        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+        if getattr(chunk, "choices", None) and chunk.choices[0].delta and chunk.choices[0].delta.content:
             yield chunk.choices[0].delta.content
+        _capture_chunk_usage(adapter, chunk)
 
 
-def _openai_stream_helper(client, model_name, prompt, system_message, max_tokens, temperature, timeout):
+def _openai_stream_helper(client, model_name, prompt, system_message, max_tokens, temperature, timeout, adapter: "BaseLLMAdapter | None" = None):
     """OpenAI 兼容接口的通用流式调用辅助函数。
     client: openai.OpenAI 实例
     返回: generator，逐片段 yield 文本
@@ -100,17 +153,7 @@ def _openai_stream_helper(client, model_name, prompt, system_message, max_tokens
     if system_message:
         messages.append({"role": "system", "content": system_message})
     messages.append({"role": "user", "content": prompt})
-    stream = client.chat.completions.create(
-        model=model_name,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        timeout=timeout,
-        stream=True,
-    )
-    for chunk in stream:
-        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-            yield chunk.choices[0].delta.content
+    yield from _openai_chat_stream_helper(client, model_name, messages, max_tokens, temperature, timeout, adapter=adapter)
 
 
 class DeepSeekAdapter(BaseLLMAdapter):
@@ -151,18 +194,27 @@ class DeepSeekAdapter(BaseLLMAdapter):
         if not response:
             logging.warning("No response from DeepSeekAdapter.")
             return ""
+        try:
+            from api.usage_meter import extract_langchain_usage
+            u = extract_langchain_usage(response)
+            if u:
+                self.last_usage = {**u, "source": "exact"}
+        except Exception:
+            pass
         return response.content
 
     def invoke_stream(self, prompt: str, system_message: str = ""):
+        self.last_usage = None
         yield from _openai_stream_helper(
             self._raw_client, self.model_name, prompt, system_message,
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
     def invoke_chat_stream(self, messages: list):
+        self.last_usage = None
         yield from _openai_chat_stream_helper(
             self._raw_client, self.model_name, messages,
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
 class OpenAIAdapter(BaseLLMAdapter):
@@ -205,6 +257,7 @@ class OpenAIAdapter(BaseLLMAdapter):
             )
 
     def invoke(self, prompt: str, system_message: str = "") -> str:
+        self.last_usage = None
         if self._raw_client:
             messages = []
             if system_message:
@@ -235,6 +288,13 @@ class OpenAIAdapter(BaseLLMAdapter):
                 logging.info(f"[Thinking] 思考过程 ({len(reasoning)}字):\n{reasoning[:500]}{'...(截断)' if len(reasoning) > 500 else ''}")
             else:
                 logging.info(f"[Thinking] 未获取到 reasoning_content, msg字段: {list(vars(msg).keys()) if hasattr(msg, '__dict__') else dir(msg)}")
+            try:
+                from api.usage_meter import extract_openai_usage
+                u = extract_openai_usage(response)
+                if u:
+                    self.last_usage = {**u, "source": "exact"}
+            except Exception:
+                pass
             content = msg.content or ""
             if not content and reasoning:
                 logging.warning("[Thinking] content 为空但有 reasoning_content, 可能模型仅返回了思考过程")
@@ -250,9 +310,17 @@ class OpenAIAdapter(BaseLLMAdapter):
             if not response:
                 logging.warning("No response from OpenAIAdapter.")
                 return ""
+            try:
+                from api.usage_meter import extract_langchain_usage
+                u = extract_langchain_usage(response)
+                if u:
+                    self.last_usage = {**u, "source": "exact"}
+            except Exception:
+                pass
             return response.content
 
     def invoke_stream(self, prompt: str, system_message: str = ""):
+        self.last_usage = None
         if self._raw_client:
             # thinking 模式也支持流式
             messages = []
@@ -263,47 +331,58 @@ class OpenAIAdapter(BaseLLMAdapter):
                 "model": self.model_name,
                 "messages": messages,
                 "stream": True,
+                "stream_options": {"include_usage": True},
             }
             api_params.update(_token_limit_params(self.model_name, self.max_tokens))
             if not _uses_max_completion_tokens(self.model_name):
                 api_params["temperature"] = self.temperature
             if self.thinking_budget > 0 and not _is_official_openai_base_url(self.base_url):
                 api_params["extra_body"] = {"thinking_budget": self.thinking_budget}
-            stream = self._raw_client.chat.completions.create(**api_params)
+            try:
+                stream = self._raw_client.chat.completions.create(**api_params)
+            except TypeError:
+                api_params.pop("stream_options", None)
+                stream = self._raw_client.chat.completions.create(**api_params)
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
+                _capture_chunk_usage(self, chunk)
         else:
             yield from _openai_stream_helper(
                 OpenAI(base_url=self.base_url, api_key=self.api_key,
                        timeout=self.timeout, max_retries=0),
                 self.model_name, prompt, system_message,
-                self.max_tokens, self.temperature, self.timeout
+                self.max_tokens, self.temperature, self.timeout, adapter=self,
             )
 
     def invoke_chat_stream(self, messages: list):
+        self.last_usage = None
         if self._raw_client:
             api_params = {
                 "model": self.model_name,
                 "messages": messages,
                 "timeout": self.timeout,
                 "stream": True,
+                "stream_options": {"include_usage": True},
             }
             api_params.update(_token_limit_params(self.model_name, self.max_tokens))
             if not _uses_max_completion_tokens(self.model_name):
                 api_params["temperature"] = self.temperature
-            stream = self._raw_client.chat.completions.create(
-                **api_params
-            )
+            try:
+                stream = self._raw_client.chat.completions.create(**api_params)
+            except TypeError:
+                api_params.pop("stream_options", None)
+                stream = self._raw_client.chat.completions.create(**api_params)
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
+                _capture_chunk_usage(self, chunk)
         else:
             raw = OpenAI(base_url=self.base_url, api_key=self.api_key,
                          timeout=self.timeout, max_retries=0)
             yield from _openai_chat_stream_helper(
                 raw, self.model_name, messages,
-                self.max_tokens, self.temperature, self.timeout
+                self.max_tokens, self.temperature, self.timeout, adapter=self,
             )
 
 class GeminiAdapter(BaseLLMAdapter):
@@ -326,6 +405,7 @@ class GeminiAdapter(BaseLLMAdapter):
         self._model = genai.GenerativeModel(model_name=self.model_name)
 
     def invoke(self, prompt: str, system_message: str = "") -> str:
+        self.last_usage = None
         try:
             # 设置生成配置
             generation_config = genai.types.GenerationConfig(
@@ -343,6 +423,14 @@ class GeminiAdapter(BaseLLMAdapter):
                 effective_prompt,
                 generation_config=generation_config
             )
+
+            try:
+                from api.usage_meter import extract_gemini_usage
+                u = extract_gemini_usage(response)
+                if u:
+                    self.last_usage = {**u, "source": "exact"}
+            except Exception:
+                pass
 
             if response and response.text:
                 return response.text
@@ -394,6 +482,13 @@ class AzureOpenAIAdapter(BaseLLMAdapter):
         if not response:
             logging.warning("No response from AzureOpenAIAdapter.")
             return ""
+        try:
+            from api.usage_meter import extract_langchain_usage
+            u = extract_langchain_usage(response)
+            if u:
+                self.last_usage = {**u, "source": "exact"}
+        except Exception:
+            pass
         return response.content
 
 class OllamaAdapter(BaseLLMAdapter):
@@ -422,6 +517,7 @@ class OllamaAdapter(BaseLLMAdapter):
         )
 
     def invoke(self, prompt: str, system_message: str = "") -> str:
+        self.last_usage = None
         from langchain_core.messages import SystemMessage as LCSystemMessage, HumanMessage
         if system_message:
             messages = [LCSystemMessage(content=system_message), HumanMessage(content=prompt)]
@@ -431,22 +527,25 @@ class OllamaAdapter(BaseLLMAdapter):
         if not response:
             logging.warning("No response from OllamaAdapter.")
             return ""
+        self._capture_response_usage(response)
         return response.content
 
     def invoke_stream(self, prompt: str, system_message: str = ""):
+        self.last_usage = None
         raw = OpenAI(base_url=self.base_url, api_key=self.api_key,
                      timeout=self.timeout, max_retries=0)
         yield from _openai_stream_helper(
             raw, self.model_name, prompt, system_message,
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
     def invoke_chat_stream(self, messages: list):
+        self.last_usage = None
         raw = OpenAI(base_url=self.base_url, api_key=self.api_key,
                      timeout=self.timeout, max_retries=0)
         yield from _openai_chat_stream_helper(
             raw, self.model_name, messages,
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
 class MLStudioAdapter(BaseLLMAdapter):
@@ -469,6 +568,7 @@ class MLStudioAdapter(BaseLLMAdapter):
         )
 
     def invoke(self, prompt: str, system_message: str = "") -> str:
+        self.last_usage = None
         try:
             from langchain_core.messages import SystemMessage as LCSystemMessage, HumanMessage
             if system_message:
@@ -479,6 +579,7 @@ class MLStudioAdapter(BaseLLMAdapter):
             if not response:
                 logging.warning("No response from MLStudioAdapter.")
                 return ""
+            self._capture_response_usage(response)
             return response.content
         except Exception as e:
             logging.error(f"ML Studio API 调用超时或失败: {e}")
@@ -518,6 +619,7 @@ class AzureAIAdapter(BaseLLMAdapter):
         )
 
     def invoke(self, prompt: str, system_message: str = "") -> str:
+        self.last_usage = None
         try:
             sys_msg = system_message if system_message else "You are a helpful assistant."
             response = self._client.complete(
@@ -527,6 +629,7 @@ class AzureAIAdapter(BaseLLMAdapter):
                 ]
             )
             if response and response.choices:
+                self._capture_response_usage(response)
                 return response.choices[0].message.content
             else:
                 logging.warning("No response from AzureAIAdapter.")
@@ -552,6 +655,7 @@ class VolcanoEngineAIAdapter(BaseLLMAdapter):
             max_retries=0
         )
     def invoke(self, prompt: str, system_message: str = "") -> str:
+        self.last_usage = None
         try:
             sys_msg = system_message if system_message else "你是DeepSeek，是一个 AI 人工智能助手"
             response = self._client.chat.completions.create(
@@ -565,16 +669,18 @@ class VolcanoEngineAIAdapter(BaseLLMAdapter):
             if not response:
                 logging.warning("No response from VolcanoEngineAIAdapter.")
                 return ""
+            self._capture_response_usage(response)
             return response.choices[0].message.content
         except Exception as e:
             logging.error(f"火山引擎API调用超时或失败: {e}")
             return ""
 
     def invoke_stream(self, prompt: str, system_message: str = ""):
+        self.last_usage = None
         yield from _openai_stream_helper(
             self._client, self.model_name, prompt,
             system_message or "你是DeepSeek，是一个 AI 人工智能助手",
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
 class SiliconFlowAdapter(BaseLLMAdapter):
@@ -595,6 +701,7 @@ class SiliconFlowAdapter(BaseLLMAdapter):
             max_retries=0
         )
     def invoke(self, prompt: str, system_message: str = "") -> str:
+        self.last_usage = None
         try:
             sys_msg = system_message if system_message else "你是DeepSeek，是一个 AI 人工智能助手"
             api_params = {
@@ -615,6 +722,7 @@ class SiliconFlowAdapter(BaseLLMAdapter):
             if not response:
                 logging.warning("No response from SiliconFlowAdapter.")
                 return ""
+            self._capture_response_usage(response)
             msg = response.choices[0].message
             reasoning = (
                 getattr(msg, 'reasoning_content', None)
@@ -633,16 +741,18 @@ class SiliconFlowAdapter(BaseLLMAdapter):
             return ""
 
     def invoke_stream(self, prompt: str, system_message: str = ""):
+        self.last_usage = None
         yield from _openai_stream_helper(
             self._client, self.model_name, prompt,
             system_message or "你是DeepSeek，是一个 AI 人工智能助手",
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
     def invoke_chat_stream(self, messages: list):
+        self.last_usage = None
         yield from _openai_chat_stream_helper(
             self._client, self.model_name, messages,
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
 # grok實現
@@ -666,6 +776,7 @@ class GrokAdapter(BaseLLMAdapter):
         )
 
     def invoke(self, prompt: str, system_message: str = "") -> str:
+        self.last_usage = None
         try:
             sys_msg = system_message if system_message else "You are Grok, created by xAI."
             response = self._client.chat.completions.create(
@@ -679,6 +790,7 @@ class GrokAdapter(BaseLLMAdapter):
                 timeout=self.timeout
             )
             if response and response.choices:
+                self._capture_response_usage(response)
                 return response.choices[0].message.content
             else:
                 logging.warning("No response from GrokAdapter.")
@@ -688,16 +800,18 @@ class GrokAdapter(BaseLLMAdapter):
             return ""
 
     def invoke_stream(self, prompt: str, system_message: str = ""):
+        self.last_usage = None
         yield from _openai_stream_helper(
             self._client, self.model_name, prompt,
             system_message or "You are Grok, created by xAI.",
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
     def invoke_chat_stream(self, messages: list):
+        self.last_usage = None
         yield from _openai_chat_stream_helper(
             self._client, self.model_name, messages,
-            self.max_tokens, self.temperature, self.timeout
+            self.max_tokens, self.temperature, self.timeout, adapter=self,
         )
 
 def _apply_proxy_settings():
@@ -739,10 +853,12 @@ def create_llm_adapter(
     max_tokens: int,
     timeout: int,
     enable_thinking: bool = False,
-    thinking_budget: int = 0
+    thinking_budget: int = 0,
+    config_name: str = "",
 ) -> BaseLLMAdapter:
     """
     工厂函数：根据 interface_format 返回不同的适配器实例。
+    config_name 仅作 usage 上报标签；不传也兼容旧调用。
     """
     _apply_proxy_settings()
     fmt = interface_format.strip().lower()
@@ -754,28 +870,32 @@ def create_llm_adapter(
         "mirrorstages": "openai",
         "mirror stages": "openai",
     }
-    fmt = aliases.get(fmt, fmt)
-    if fmt == "deepseek":
-        return DeepSeekAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
-    elif fmt == "openai":
-        return OpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout, enable_thinking, thinking_budget)
-    elif fmt == "azure openai":
-        return AzureOpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
-    elif fmt == "azure ai":
-        return AzureAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
-    elif fmt == "ollama":
-        return OllamaAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
-    elif fmt == "ml studio":
-        return MLStudioAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
-    elif fmt == "gemini":
-        return GeminiAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
-    elif fmt == "阿里云百炼":
-        return OpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout, enable_thinking, thinking_budget)
-    elif fmt == "火山引擎":
-        return VolcanoEngineAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
-    elif fmt == "硅基流动":
-        return SiliconFlowAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout, enable_thinking, thinking_budget)
-    elif fmt == "grok":
-        return GrokAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    canon = aliases.get(fmt, fmt)
+    if canon == "deepseek":
+        adapter = DeepSeekAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif canon == "openai":
+        adapter = OpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout, enable_thinking, thinking_budget)
+    elif canon == "azure openai":
+        adapter = AzureOpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif canon == "azure ai":
+        adapter = AzureAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif canon == "ollama":
+        adapter = OllamaAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif canon == "ml studio":
+        adapter = MLStudioAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif canon == "gemini":
+        adapter = GeminiAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif canon == "阿里云百炼":
+        adapter = OpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout, enable_thinking, thinking_budget)
+    elif canon == "火山引擎":
+        adapter = VolcanoEngineAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif canon == "硅基流动":
+        adapter = SiliconFlowAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout, enable_thinking, thinking_budget)
+    elif canon == "grok":
+        adapter = GrokAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
     else:
         raise ValueError(f"Unknown interface_format: {interface_format}")
+    # 透传上报标签
+    adapter.provider_name = (interface_format or "").strip()
+    adapter.config_name = config_name or ""
+    return adapter

@@ -63,14 +63,21 @@ def _character_visual_lock(card: dict[str, Any]) -> str:
 
 def _build_character_image_prompt(filepath: str, card: dict[str, Any]) -> tuple[str, str]:
     visual_style = _visual_style_for(filepath)
-    prompt = _compact_text(
-        "single full-body character standing portrait",
-        "one character only, head-to-toe view, entire body visible, clean readable silhouette",
-        _character_visual_lock(card),
-        "neutral standing pose, signature expression, simple clean background, no panels",
-        visual_style,
-        "high detail, sharp focus, professional concept art, consistent design for reuse",
-    )
+    # 优先使用 LLM 在角色卡里写好的"画面描述"（已经覆盖完整 11 维度 + 末尾 — 避免事项），
+    # 这样能保证"用户在 UI 上看到的 prompt"和"导入生图后实际发出的 prompt"完全一致。
+    written = str(card.get("prompt_positive") or "").strip()
+    if written:
+        prompt = written
+    else:
+        # 旧字段兜底（character_fallback 模板或老数据走这里）
+        prompt = _compact_text(
+            "single full-body character standing portrait",
+            "one character only, head-to-toe view, entire body visible, clean readable silhouette",
+            _character_visual_lock(card),
+            "neutral standing pose, signature expression, simple clean background, no panels",
+            visual_style,
+            "high detail, sharp focus, professional concept art, consistent design for reuse",
+        )
     return prompt, _negative_prompt(
         card.get("prompt_negative"),
         "close-up, bust portrait, multiple poses, split view, character sheet layout, multiple panels, multiple people, busy background",
@@ -79,24 +86,29 @@ def _build_character_image_prompt(filepath: str, card: dict[str, Any]) -> tuple[
 
 def _build_storyboard_image_prompt(filepath: str, row: dict[str, Any]) -> tuple[str, str]:
     visual_style = _visual_style_for(filepath)
-    character_text = _compact_text(row.get("characters"), row.get("subject"), row.get("prompt_positive"))
-    locks = [_character_visual_lock(card) for card in _find_character_cards(filepath, character_text)]
-    lock_text = " | ".join(lock for lock in locks if lock)
-    prompt = _compact_text(
-        "vertical manhua storyboard frame, 9:16 composition",
-        row.get("camera"),
-        row.get("composition"),
-        row.get("subject"),
-        row.get("characters"),
-        lock_text,
-        row.get("location"),
-        row.get("light"),
-        row.get("continuity"),
-        visual_style,
-        "clear focal point, cinematic lighting, expressive face, dynamic but readable action",
-        "no speech bubbles unless explicitly requested",
-        row.get("prompt_positive"),
-    )
+    written = str(row.get("prompt_positive") or "").strip()
+    if written:
+        # 新模板下分镜的"画面描述"已经按 A/B/C 三段拼好（场景锚定+角色锚定+镜头），1:1 进入生图。
+        prompt = written
+    else:
+        # 旧字段兜底
+        character_text = _compact_text(row.get("characters"), row.get("subject"))
+        locks = [_character_visual_lock(card) for card in _find_character_cards(filepath, character_text)]
+        lock_text = " | ".join(lock for lock in locks if lock)
+        prompt = _compact_text(
+            "vertical manhua storyboard frame, 9:16 composition",
+            row.get("camera"),
+            row.get("composition"),
+            row.get("subject"),
+            row.get("characters"),
+            lock_text,
+            row.get("location"),
+            row.get("light"),
+            row.get("continuity"),
+            visual_style,
+            "clear focal point, cinematic lighting, expressive face, dynamic but readable action",
+            "no speech bubbles unless explicitly requested",
+        )
     return prompt, _negative_prompt(row.get("prompt_negative"))
 
 

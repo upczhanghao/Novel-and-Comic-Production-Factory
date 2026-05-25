@@ -3,6 +3,56 @@
 本项目所有显著变更记录于此。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.8] - 2026-05-25
+
+### Added — 漫剧生产链路重做 + Token 用量统计
+
+#### 漫剧制作模块（按"乐高积木"重新分层）
+
+- **角色信息与角色卡提示词**：聚焦**纯角色立绘**——单角色 + 中性站姿 + 干净白底 + 标准布光，不含任何场景/剧情/其他角色，让生图模型能稳定复现同一角色。模板里强制覆盖 11 个画面维度（年龄区间/体型/脸型/发色发型/瞳色/肤色/服装颜色材质/配饰位置/中性表情/中性站姿/固定背景画质），任何维度缺失都会让模型自由发挥导致漂移。
+- **章节场景图提示词**：聚焦**纯环境场景**——空场，**画面描述里不能出现任何人物**。"出现角色"字段保留为元数据供分镜阶段引用。强制覆盖 10 个画面维度（地点+时段/主光方向色温/辅光阴影/环境物件含位置/镜头焦段/色彩主调/天气粒子/材质质感/构图/固定画质）。
+- **章节分镜图提示词**：把"角色卡 + 场景图"组合成连续画面。模板强制 A 段（Scene reference: SC-XXX + 复述场景）→ B 段（角色名 + 复述角色卡 4-6 锚点 + 该镜动作/表情）→ C 段（镜头/构图/画质）三段拼接，确保跨镜一致。
+- **新增「全文扫描」开关**（角色/场景）：勾选后走 Map-Reduce 全文流程——每章扫描出局部清单 → 跨章合并去重 → 角色按全文证据片段写卡 / 场景按 SC-XXX 编号入 `scenes.json` 结构化场景库。代价是调用次数 5-9 倍，建议成本敏感时关闭使用窗口模式。
+- **小说改编漫剧剧本**新增 3 个产能预算：全剧场景数 / 主角数 / 配角数。模板要求 LLM 按预算合并相似空间和次要角色，从源头控制后续出图总数。
+- **指令配置同步打通**：所有 11 个漫剧模板（含 4 个新增 Map-Reduce 模板）都可在「指令配置」页热更，下次生成立即生效。
+- **新增 ImageEditView**：基于 OpenAI/MirrorStages `/v1/images/edits` 的图片编辑独立页（接 v2.4.7）；漫剧/图片库的"画面描述"现在 1:1 进入生图调用，不再被后端覆盖拼装。
+
+#### Token 用量统计模块
+
+- **新增 `/usage` 视图**：实时 Token 消耗看板，3 秒轮询，按 类型/配置/模型/厂商 四个维度聚合，含今日/60s/1h/lifetime 滑动窗口。
+- **后端 `api/usage_meter.py`**：内存滑动窗口 + JSONL 持久化 + 重启自动重放当日累计；线程安全，落盘失败不影响主流程。
+- **精确 token 来源**：所有走 `invoke_with_cleaning` 的 LLM 调用自动捕获 `usage` 字段（OpenAI / DeepSeek / 阿里 / 火山 / 硅基 / Grok / Gemini / Azure / MirrorStages）；流式调用全量加 `stream_options={"include_usage": True}`；图片接口（gpt-image-1）也接精确 usage。
+- **三段式准确性标记**：`exact`（来自 SDK usage）/ `estimated`（按字符数兜底估算 ±10-15%）/ `missing`（厂商未返回也未启用估算），UI 三色徽标区分。
+
+### Fixed — 模板/管线一致性补漏（B1-B5 + I1-I7）
+
+- **B1**：非全文模式角色卡 prompt 出现字面 `{character_evidence}` 占位 — pipeline 补传缺省字符串。
+- **B2**：连续性检查对每个分镜误报"缺少地点/光影"——改为从 `prompt_positive` 推断（识别 `Scene reference` / `SC-` / 光线关键词）。
+- **B3**：漫剧 `/manju/images/generate` 没注入 `config_name`，usage 统计永远归"空配置"——补注入。
+- **B4**：`_resolve_image_prompt` 缺 `source_type=scene` 分支——补 scenes.json 查询。
+- **B5**：`/images/list` 每次扫盘后 N+1 写盘 records.json，且 batch-delete 删掉的图刷新后会被复活——删掉那段回写逻辑。
+- **I1**：角色一致性锁定块输出 7 个空字段空行——只输出有值的字段。
+- **I2**：全文场景模式下 `_chapter_markdown_section` 按"# 第N章"找不到就返回整本，导致分镜 prompt token 暴涨——加 SC 模式分支按"出现章节"过滤。
+- **I3**：`_relay_progress` 吞掉 `content` 字段，全文模式批次内流式预览失效——透传 content。
+- **I4**：parser 不读"引用场景/引用角色"字段——加字段映射。
+- **I7**：`regenerate_storyboard_shot` 仍要求 LLM 输出已废弃的 location/light/subtitle/continuity 字段——同步新模板字段，patch 解析支持中文别名。
+- **角色卡 prompt 不一致**：之前 `_build_character_image_prompt` 忽略 `card.prompt_positive` 重新拼老字段，新模板下大半字段为空导致和 UI 显示的"画面描述"不一致——改为优先使用 prompt_positive，1:1 进入生图。
+- **场景"导入生图"识别失败**：`_collect_markdown_prompt_items` 关键字未识别"画面描述"——补关键字。
+- **全文模式 `'str' object is not callable`**：`run_with_sse` 的 progress 参数位置错位——把 `full_scan` 移到 progress 之前。
+- **max_tokens=4096 截断**：全文模式角色卡 prompt 收缩到 ~22k 字符，每批 2 个角色避免输出超限。
+
+### Changed — UI
+
+- **漫剧制作页布局**：左侧 aside 去掉 sticky，整页同步滚动，三块面板按自然高度完整铺开（不再被裁切）。
+- **StreamOutput 配色**：深棕底+米白字 → 浅灰底（`--color-parchment-dark`）+ 墨色字（`--color-ink`），与米白主题对比一致。该组件被工坊/风格/一致性/漫剧四视图共用。
+- **字段命名**：「正向提示词 / 负向提示词」→ 单字段「画面描述」（聚焦指令型生图模型）；前端表头同步。
+
+### Files
+- 新增：`api/usage_meter.py`、`api/routers/usage.py`、`frontend/src/views/UsageView.vue`、`frontend/src/views/ImageEditView.vue`
+- 修改：`api/image_service.py`、`api/manju_instruction_templates.py`、`api/rate_limit.py`、`api/routers/images.py`、`api/routers/manju/*.py`、`api/schemas.py`、`api_server.py`、`llm_adapters.py`、`novel_generator/common.py`、`frontend/src/api/client.ts`、`frontend/src/router/index.ts`、`frontend/src/views/ManjuView.vue`、`frontend/src/components/StreamOutput.vue`、`frontend/src/styles/main.css`、`.gitignore`
+
+---
+
 ## [2.4.7] - 2026-05-22
 
 ### Added — 图片编辑

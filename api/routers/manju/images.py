@@ -238,4 +238,13 @@ def _resolve_image_prompt(body: ManjuImageGenerateRequest) -> str:
             if row.get("id") == body.source_id:
                 prompt, negative = _build_storyboard_image_prompt(body.filepath, row)
                 return f"{prompt}\nNegative prompt: {negative}".strip()
+    if body.source_type == "scene":
+        from .parser import _load_scenes_structured
+        for sc in _load_scenes_structured(body.filepath):
+            if sc.get("id") == body.source_id or sc.get("name") == body.source_id:
+                positive = str(sc.get("prompt_positive") or "").strip()
+                if positive:
+                    negative = str(sc.get("prompt_negative") or "").strip()
+                    return (f"{positive}\nNegative prompt: {negative}".strip()
+                            if negative else positive)
     raise HTTPException(status_code=400, detail="未找到可用于生成图片的提示词")

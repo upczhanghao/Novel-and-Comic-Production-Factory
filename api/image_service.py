@@ -363,17 +363,60 @@ def generate_image_bytes(config: dict[str, Any], prompt: str) -> bytes:
         default_base_url = MIRRORSTAGES_OPENAI_BASE_URL if provider == "mirrorstages" else "https://api.openai.com/v1"
         base_url = normalize_mirrorstages_base_url(config.get("base_url") or default_base_url) if provider == "mirrorstages" else (config.get("base_url") or default_base_url)
         client = OpenAI(api_key=api_key, base_url=base_url)
+        import time as _time
+        _start = _time.time()
         try:
             response = client.images.generate(**_openai_image_params(config, prompt))
         except Exception as exc:
             provider_name = "MirrorStages" if provider == "mirrorstages" else "OpenAI"
             raise HTTPException(status_code=502, detail=f"{provider_name} 图片生成失败：{exc}") from exc
-        image_bytes = extract_image_bytes(response.model_dump() if hasattr(response, "model_dump") else response)
+        payload = response.model_dump() if hasattr(response, "model_dump") else response
+        _record_image_usage(provider, config, "generate", payload, _time.time() - _start)
+        image_bytes = extract_image_bytes(payload)
         if not image_bytes:
             raise HTTPException(status_code=502, detail="图片接口未返回图片数据")
         return image_bytes
 
     raise HTTPException(status_code=400, detail="provider 只能是 openai/mirrorstages")
+
+
+def _record_image_usage(provider: str, config: dict[str, Any], op: str, payload: Any, elapsed: float) -> None:
+    """从图片接口响应里抽 usage 并上报；失败也按"按张计费"记一条 estimated。"""
+    try:
+        from api.usage_meter import record_usage
+        usage = (payload or {}).get("usage") if isinstance(payload, dict) else None
+        if isinstance(usage, dict) and any(usage.get(k) for k in ("total_tokens", "input_tokens", "output_tokens")):
+            pt = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
+            ct = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+            tt = int(usage.get("total_tokens") or (pt + ct))
+            record_usage(
+                kind="image",
+                provider=str(provider or ""),
+                config_name=str(config.get("config_name") or config.get("name") or ""),
+                model=str(config.get("model") or ""),
+                prompt_tokens=pt,
+                completion_tokens=ct,
+                total_tokens=tt,
+                elapsed_ms=int(elapsed * 1000),
+                source="exact",
+                note=op,
+            )
+        else:
+            # 没有 usage：按一次调用记一条，token 标 0，标记 missing
+            record_usage(
+                kind="image",
+                provider=str(provider or ""),
+                config_name=str(config.get("config_name") or config.get("name") or ""),
+                model=str(config.get("model") or ""),
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                elapsed_ms=int(elapsed * 1000),
+                source="missing",
+                note=op,
+            )
+    except Exception:
+        pass
 
 
 def save_generated_image(
@@ -440,15 +483,19 @@ def edit_image_bytes(config: dict[str, Any], prompt: str, source_image_bytes: by
     # openai SDK 接受 (filename, BytesIO, mime) 元组作为 image 参数
     import io
     import mimetypes
+    import time as _time
     mime, _ = mimetypes.guess_type(source_filename)
     image_tuple = (source_filename, io.BytesIO(source_image_bytes), mime or "image/png")
     params = _openai_image_edit_params(config, prompt)
+    _start = _time.time()
     try:
         response = client.images.edit(image=image_tuple, **params)
     except Exception as exc:
         provider_name = "MirrorStages" if provider == "mirrorstages" else "OpenAI"
         raise HTTPException(status_code=502, detail=f"{provider_name} 图片编辑失败：{exc}") from exc
-    image_bytes = extract_image_bytes(response.model_dump() if hasattr(response, "model_dump") else response)
+    payload = response.model_dump() if hasattr(response, "model_dump") else response
+    _record_image_usage(provider, config, "edit", payload, _time.time() - _start)
+    image_bytes = extract_image_bytes(payload)
     if not image_bytes:
         raise HTTPException(status_code=502, detail="图片编辑接口未返回图片数据")
     return image_bytes

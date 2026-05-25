@@ -13,6 +13,7 @@ __pycache__/
 app.log
 server.log
 prompt_history.jsonl
+usage_history.jsonl
 .novelwriter.requirements.sha256
 
 # Frontend

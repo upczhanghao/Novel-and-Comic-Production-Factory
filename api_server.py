@@ -121,7 +121,7 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
 from api.routers import (
     projects, config, presets, generate,
     styles, knowledge, files, logs, consistency, xp_presets,
-    brainstorm, manju, images, security,
+    brainstorm, manju, images, security, usage,
 )
 
 app.include_router(projects.router, prefix="/api")
@@ -138,6 +138,7 @@ app.include_router(brainstorm.router, prefix="/api")
 app.include_router(manju.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 app.include_router(security.router, prefix="/api")
+app.include_router(usage.router, prefix="/api")
 
 # ── 健康检查 ──────────────────────────────────────────────────────────────────
 

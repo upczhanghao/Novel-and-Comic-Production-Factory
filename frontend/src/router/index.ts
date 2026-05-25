@@ -104,6 +104,12 @@ export const navRoutes: RouteRecordRaw[] = [
     meta: { title: '安全与限流', icon: 'check', group: 'system', level: 'advanced', requiresProject: false },
   },
   {
+    path: '/usage',
+    name: 'usage',
+    component: () => import('@/views/UsageView.vue'),
+    meta: { title: 'Token 用量', icon: 'check', group: 'system', level: 'beginner', requiresProject: false },
+  },
+  {
     path: '/files',
     name: 'files',
     component: () => import('@/views/FilesView.vue'),

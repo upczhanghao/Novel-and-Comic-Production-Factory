@@ -122,6 +122,9 @@ const queueRows = ref<Array<Record<string, unknown>>>([])
 const generatingImageIds = ref<Set<string>>(new Set())
 const selectedImageConfig = ref('')
 const scriptTargetChapters = ref(12)
+const scriptTargetScenes = ref(30)
+const scriptTargetLeads = ref(2)
+const scriptTargetSupportingCast = ref(6)
 const scriptRenameCharacters = ref(false)
 const scriptAdaptationLevel = ref('中度改编')
 const scriptEpisodeDuration = ref('3-5分钟')
@@ -269,7 +272,7 @@ function runSSE(state: StepState, url: string, body: Record<string, unknown>, af
   state.sseHandle = handle
 }
 
-function commonBody() {
+function commonBody(extra?: Record<string, unknown>) {
   const settings = appliedSettings.value ?? currentSettings.value
   return {
     llm_config_name: settings.llm_config_name,
@@ -279,15 +282,22 @@ function commonBody() {
     shots_per_chapter: settings.shots_per_chapter,
     visual_style: settings.visual_style,
     extra_guidance: settings.extra_guidance,
+    ...(extra || {}),
   }
 }
 
+const fullScanCharacters = ref(localStorage.getItem('nw.manju.fullScan.characters') === '1')
+const fullScanScenes = ref(localStorage.getItem('nw.manju.fullScan.scenes') === '1')
+
+watch(fullScanCharacters, (v) => localStorage.setItem('nw.manju.fullScan.characters', v ? '1' : '0'))
+watch(fullScanScenes, (v) => localStorage.setItem('nw.manju.fullScan.scenes', v ? '1' : '0'))
+
 function generateCharacters() {
-  runSSE(characters.value, manjuApi.charactersUrl(), commonBody())
+  runSSE(characters.value, manjuApi.charactersUrl(), commonBody({ full_scan: fullScanCharacters.value }))
 }
 
 function generateScenes() {
-  runSSE(scenes.value, manjuApi.scenesUrl(), commonBody(), loadStatus)
+  runSSE(scenes.value, manjuApi.scenesUrl(), commonBody({ full_scan: fullScanScenes.value }), loadStatus)
 }
 
 function generateStoryboards() {
@@ -306,6 +316,9 @@ function scriptBody() {
     start_chapter: settings.start_chapter,
     end_chapter: settings.end_chapter,
     target_chapters: scriptTargetChapters.value,
+    target_scenes: scriptTargetScenes.value,
+    target_leads: scriptTargetLeads.value,
+    target_supporting_cast: scriptTargetSupportingCast.value,
     rename_characters: scriptRenameCharacters.value,
     adaptation_level: scriptAdaptationLevel.value,
     episode_duration: scriptEpisodeDuration.value,
@@ -922,6 +935,18 @@ watch(() => characters.value.running, (running, prev) => {
               <input v-model.number="scriptTargetChapters" type="number" min="1" max="120" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
             </div>
             <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1" title="全剧总场景上限，控制后续场景图出图总数">全剧场景数 ⓘ</label>
+              <input v-model.number="scriptTargetScenes" type="number" min="1" max="500" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1" title="主角数量上限，控制角色卡出图总数">主角数 ⓘ</label>
+              <input v-model.number="scriptTargetLeads" type="number" min="1" max="20" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs text-[var(--color-ink-light)] mb-1" title="重要配角数量上限（不计功能性路人）">配角数 ⓘ</label>
+              <input v-model.number="scriptTargetSupportingCast" type="number" min="0" max="50" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm" />
+            </div>
+            <div>
               <label class="block text-xs text-[var(--color-ink-light)] mb-1">剧情改编幅度</label>
               <select v-model="scriptAdaptationLevel" class="w-full border border-[var(--color-parchment-darker)] rounded-md px-3 py-2 text-sm">
                 <option>轻度改编</option>
@@ -960,6 +985,11 @@ watch(() => characters.value.running, (running, prev) => {
               <h3 class="module-panel-title">角色信息与角色卡提示词</h3>
               <p class="module-panel-caption">沉淀角色设定与单张全身角色图提示词。</p>
               <PromptTemplatePreview kind="character" :visual-style="visualStyle" :extra-guidance="extraGuidance" />
+              <label class="mt-2 inline-flex items-center gap-2 text-xs text-[var(--color-ink-light)] cursor-pointer">
+                <input type="checkbox" v-model="fullScanCharacters" :disabled="characters.running" />
+                <span>全文扫描模式（基于整本TXT逐章Map-Reduce识别角色 + 全文证据收集）</span>
+                <span class="text-[var(--color-ink-light)]" :title="'调用次数 ≈ 章节数 + 1（合并）+ 角色数/4（角色卡），约旧版 8-10 倍。生成时间和成本同步增加。'">ⓘ</span>
+              </label>
             </div>
             <div class="module-action-row">
               <button @click="exportPromptContent('characters', 'md')" :disabled="!characters.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
@@ -988,6 +1018,11 @@ watch(() => characters.value.running, (running, prev) => {
               <h3 class="module-panel-title">章节场景图提示词</h3>
               <p class="module-panel-caption">为章节主场景生成稳定的环境、氛围和构图描述。</p>
               <PromptTemplatePreview kind="scene" :visual-style="visualStyle" :extra-guidance="extraGuidance" />
+              <label class="mt-2 inline-flex items-center gap-2 text-xs text-[var(--color-ink-light)] cursor-pointer">
+                <input type="checkbox" v-model="fullScanScenes" :disabled="scenes.running" />
+                <span>全文扫描模式（按段Map-Reduce识别全场景 + 跨章去重 + 输出 scenes.json）</span>
+                <span class="text-[var(--color-ink-light)]" :title="'调用次数 ≈ 章节段数 + 1（合并），长章会被分段。生成时间和成本同步增加，但场景库可被分镜引用。'">ⓘ</span>
+              </label>
             </div>
             <div class="module-action-row">
               <button @click="exportPromptContent('scenes', 'md')" :disabled="!scenes.result" class="px-3 py-2 rounded-md border border-[var(--color-parchment-darker)] text-sm disabled:opacity-50" type="button">导出 MD</button>
@@ -1111,7 +1146,7 @@ watch(() => characters.value.running, (running, prev) => {
                     <th class="p-2 text-left w-36">身份</th>
                     <th class="p-2 text-left">外貌</th>
                     <th class="p-2 text-left">服装</th>
-                    <th class="p-2 text-left">角色卡提示词</th>
+                    <th class="p-2 text-left">画面描述</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1165,7 +1200,7 @@ watch(() => characters.value.running, (running, prev) => {
                     <th class="p-2 text-left w-36">主体</th>
                     <th class="p-2 text-left w-32">角色</th>
                     <th class="p-2 text-left w-36">地点</th>
-                    <th class="p-2 text-left">正向提示词</th>
+                    <th class="p-2 text-left">画面描述</th>
                     <th class="p-2 text-left w-44">连续性</th>
                     <th class="p-2 text-left w-28">操作</th>
                   </tr>

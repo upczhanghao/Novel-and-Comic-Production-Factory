@@ -33,7 +33,10 @@ def _get_image_config(config_name: str) -> dict:
     config = configs.get(config_name)
     if not config:
         raise HTTPException(status_code=400, detail=f"未找到图片生成配置：{config_name}")
-    return config
+    # 给底层 _record_image_usage 用：把配置名打进 dict 一起带下去
+    enriched = dict(config)
+    enriched["config_name"] = config_name
+    return enriched
 
 
 @router.post("/images/generate")
@@ -140,8 +143,6 @@ def list_images(filepath: str = "./output"):
         }
 
     rows = sorted(rows_by_path.values(), key=lambda item: float(item.get("mtime") or 0), reverse=True)
-    for row in rows:
-        add_image_record(filepath, row)
     return {"images": rows, "save_dir": root}
 
 

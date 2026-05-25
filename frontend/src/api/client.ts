@@ -493,3 +493,8 @@ export const securityApi = {
   getRateLimits: () => api.get('/security/rate-limits'),
   updateRateLimits: (data: Record<string, unknown>) => api.put('/security/rate-limits', data),
 }
+
+export const usageApi = {
+  getStats: () => api.get('/usage/stats'),
+  getHistory: (limit = 100) => api.get('/usage/history', { params: { limit } }),
+}

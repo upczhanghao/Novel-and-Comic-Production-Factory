@@ -32,6 +32,10 @@ def _storyboards_json_path(filepath: str) -> str:
     return os.path.join(_work_dir(filepath), "storyboards.json")
 
 
+def _scenes_json_path(filepath: str) -> str:
+    return os.path.join(_work_dir(filepath), "scenes.json")
+
+
 def _image_config_path(filepath: str) -> str:
     return os.path.join(_work_dir(filepath), "image_config.json")
 
@@ -213,13 +217,13 @@ def _storyboard_row_from_fields(chapter_num: int, chapter_title: str, shot_no: i
         "locked": False,
         "plot": _field_value(fields, "对应剧情", "剧情", "剧情作用", "内容"),
         "subject": _field_value(fields, "画面主体", "主体", "画面", "镜头内容"),
-        "characters": _field_value(fields, "出现角色", "角色动作/表情", "角色动作表情", "人物动作", "角色", "出场人物"),
+        "characters": _field_value(fields, "引用角色", "出现角色", "角色动作/表情", "角色动作表情", "人物动作", "角色", "出场人物"),
         "camera": _field_value(fields, "镜头景别", "景别"),
         "composition": _field_value(fields, "机位/构图", "机位构图", "构图", "机位"),
-        "location": _field_value(fields, "背景场景", "地点", "场景", "背景", "环境"),
+        "location": _field_value(fields, "引用场景", "背景场景", "地点", "场景", "背景", "环境"),
         "light": _field_value(fields, "光影色彩", "光线", "时间/光线", "时间光线", "色彩"),
         "subtitle": _field_value(fields, "台词/字幕建议", "台词字幕建议", "台词", "字幕", "旁白/字幕", "旁白字幕"),
-        "prompt_positive": _field_value(fields, "正向绘图提示词", "正向提示词", "画面提示词", "提示词", "prompt", "Prompt"),
+        "prompt_positive": _field_value(fields, "画面描述", "正向绘图提示词", "正向提示词", "画面提示词", "提示词", "prompt", "Prompt"),
         "prompt_negative": _field_value(fields, "负向提示词", "反向提示词", "Negative Prompt"),
         "continuity": _field_value(fields, "连续性备注", "连续性", "备注"),
         "raw": raw,
@@ -295,7 +299,7 @@ def _characters_from_markdown(markdown: str) -> list[dict[str, Any]]:
         if not name or (name.startswith("第") and "批" in name):
             continue
         fields = _section_fields(body)
-        positive = fields.get("正向提示词") or fields.get("角色卡提示词") or ""
+        positive = fields.get("画面描述") or fields.get("正向提示词") or fields.get("角色卡提示词") or ""
         negative = fields.get("负向提示词") or ""
         card = {
             "id": re.sub(r"\W+", "_", name).strip("_") or f"char_{len(cards) + 1}",
@@ -390,3 +394,81 @@ def _storyboard_rows_from_markdown(markdown: str) -> list[dict[str, Any]]:
                 by_key[key] = row
         rows.extend(by_key[key] for key in sorted(by_key))
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Scenes (full-scan reduce) structured parser & persistence
+# ---------------------------------------------------------------------------
+
+def _scenes_from_markdown(markdown: str) -> list[dict[str, Any]]:
+    """解析 scenes_reduce 的 Markdown 输出为结构化场景列表。
+    格式约定：
+        ## SC-001 场景名
+        - 地点类型：…
+        - 时间/光线：…
+        - …
+    """
+    rows: list[dict[str, Any]] = []
+    if not markdown:
+        return rows
+    block_pattern = re.compile(
+        r"(?ms)^##\s*(SC[-_]?\d+)\s*([^\n]*)\n(.*?)(?=^##\s*SC[-_]?\d+|\Z)"
+    )
+    field_alias = {
+        "地点类型": "location_type",
+        "时间": "time_light",
+        "时间/光线": "time_light",
+        "环境元素": "environment",
+        "出现章节": "chapters",
+        "出现角色": "characters",
+        "剧情作用": "purpose",
+        "镜头景别建议": "camera",
+        "画面描述": "prompt_positive",
+        "正向提示词": "prompt_positive",
+        "正向绘图提示词": "prompt_positive",
+        "负向提示词": "prompt_negative",
+    }
+    for match in block_pattern.finditer(markdown):
+        scene_id = re.sub(r"[^A-Za-z0-9]", "-", match.group(1).strip())
+        scene_name = match.group(2).strip()
+        body = match.group(3)
+        item: dict[str, Any] = {
+            "id": scene_id,
+            "name": scene_name,
+            "raw": body.strip(),
+        }
+        for line in body.splitlines():
+            line = line.strip().lstrip("-•*").strip()
+            if not line or "：" not in line and ":" not in line:
+                continue
+            sep = "：" if "：" in line else ":"
+            label, value = line.split(sep, 1)
+            label = label.strip()
+            value = value.strip()
+            field = field_alias.get(label)
+            if not field:
+                continue
+            if field == "chapters":
+                ch_nums = [int(x) for x in re.findall(r"\d+", value)]
+                item[field] = ch_nums
+            elif field == "characters" or field == "environment":
+                item[field] = [s.strip() for s in re.split(r"[,，、/]", value) if s.strip()]
+            else:
+                item[field] = value
+        rows.append(item)
+    return rows
+
+
+def _load_scenes_structured(filepath: str) -> list[dict[str, Any]]:
+    data = _read_json(_scenes_json_path(filepath), [])
+    return data if isinstance(data, list) else []
+
+
+def _save_scenes_structured(filepath: str, scenes: list[dict[str, Any]]) -> None:
+    normalized = []
+    for idx, sc in enumerate(scenes, 1):
+        item = dict(sc)
+        item["id"] = item.get("id") or f"SC-{idx:03d}"
+        item["name"] = item.get("name") or f"场景{idx}"
+        normalized.append(item)
+    _write_json(_scenes_json_path(filepath), normalized)

@@ -48,10 +48,11 @@ _DEFAULTS = {
             "path_prefixes": ["/api/"],
         },
     },
-    # 永远豁免（健康检查、限流自身的查询）
+    # 永远豁免（健康检查、限流自身的查询、用量查询）
     "exempt_path_prefixes": [
         "/api/health",
         "/api/security/rate-limits",
+        "/api/usage/",
     ],
 }
 

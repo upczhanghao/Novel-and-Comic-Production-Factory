@@ -166,7 +166,7 @@ def _collect_markdown_prompt_items(markdown: str, source_type: str, source_label
         if re.search(r"(?:负向提示词|反向提示词|Negative Prompt)", clean_line, re.IGNORECASE):
             idx += 1
             continue
-        positive_match = re.search(r"(?:正向绘图提示词|正向提示词|画面提示词)\s*(?:[：:]\s*)?(.*)$", clean_line)
+        positive_match = re.search(r"(?:画面描述|正向绘图提示词|正向提示词|画面提示词)\s*(?:[：:]\s*)?(.*)$", clean_line)
         if not positive_match:
             idx += 1
             continue

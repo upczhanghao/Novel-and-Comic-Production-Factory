@@ -174,7 +174,8 @@ def generate_manju_script(body: ManjuScriptAdaptRequest):
         async for chunk in run_with_sse(
             _generate_script_adaptation_sync,
             body.llm_config_name, body.filepath, body.start_chapter, body.end_chapter,
-            body.target_chapters, body.rename_characters, body.adaptation_level,
+            body.target_chapters, body.target_scenes, body.target_leads, body.target_supporting_cast,
+            body.rename_characters, body.adaptation_level,
             body.episode_duration, body.script_style, body.extra_guidance,
         ):
             yield chunk
@@ -236,7 +237,11 @@ def regenerate_storyboard_shot(body: ManjuShotRegenerateRequest):
 1. 只输出 JSON，不要 Markdown，不要解释。
 2. 保持 chapter_num、shot_no、id 不变。
 3. 必须严格引用角色一致性锁定表，不能改变角色外貌、服装、道具连续性。
-4. 输出字段：subject、characters、camera、composition、location、light、subtitle、prompt_positive、prompt_negative、continuity。
+4. 输出字段（新版）：subject、引用场景、引用角色、camera、composition、prompt_positive、prompt_negative。
+   - 其中 prompt_positive 是单段画面描述，必须按 A 段（Scene reference: SC-XXX + 复述场景）→ B 段（角色名 + 角色卡复述 + 动作/表情）→ C 段（镜头/构图/画质）三段拼接，末尾用 — 引出避免事项。
+   - 引用场景 写 SC-XXX 编号或"临时场景"+一句具体地点+时段。
+   - 引用角色 用、分隔。
+   - 不要再输出 location、light、subtitle、continuity 这些已废弃字段。
 
 角色一致性锁定表：
 {_truncate(characters, 10000)}
@@ -262,9 +267,17 @@ def regenerate_storyboard_shot(body: ManjuShotRegenerateRequest):
         patch = json.loads(text)
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="LLM 未返回合法 JSON，请稍后重试")
-    for key in ("subject", "characters", "camera", "composition", "location", "light", "subtitle", "prompt_positive", "prompt_negative", "continuity"):
-        if key in patch:
-            target[key] = patch[key]
+    # 字段名规范化：支持 LLM 写中文 "引用场景"/"引用角色" 或 location/characters
+    key_aliases = {
+        "引用场景": "location",
+        "引用角色": "characters",
+        "scene_ref": "location",
+    }
+    for raw_key, value in list(patch.items()):
+        target_key = key_aliases.get(raw_key, raw_key)
+        if target_key in {"subject", "characters", "camera", "composition", "location",
+                          "light", "subtitle", "prompt_positive", "prompt_negative", "continuity"}:
+            target[target_key] = value
     target["status"] = "regenerated"
     _save_storyboard_rows(body.filepath, rows)
     return {"message": "✅ 分镜已重生成", "shot": target, "shots": rows}
@@ -412,14 +425,19 @@ def continuity_check(filepath: str = "./output"):
     card_names = {c.get("name") for c in cards if c.get("name")}
     locked_names = {c.get("name") for c in cards if c.get("name") and c.get("locked", True)}
     prev = None
+    import re as _re
+    light_pattern = _re.compile(r"(light|lighting|sun|moon|lamp|candle|fire|backlit|rim light|key light|3000K|5500K|6500K|warm|cool|阳光|月光|烛火|霓虹|暖光|冷光|侧光|顶光|逆光|侧逆光|晨|昏|夜|雨|雪|雾)", _re.IGNORECASE)
     for row in rows:
         ref_text = " ".join(str(row.get(key, "")) for key in ("characters", "subject", "prompt_positive", "continuity"))
         mentioned = {name for name in card_names if name and name in ref_text}
-        if not row.get("location"):
+        prompt_positive = str(row.get("prompt_positive", ""))
+        has_location = bool(row.get("location")) or "Scene reference" in prompt_positive or "SC-" in prompt_positive
+        has_light = bool(row.get("light")) or bool(light_pattern.search(prompt_positive))
+        if not has_location:
             issues.append({"level": "warning", "shot_id": row.get("id"), "message": "缺少背景场景/地点，后续画面连续性较弱"})
-        if not row.get("light"):
+        if not has_light:
             issues.append({"level": "warning", "shot_id": row.get("id"), "message": "缺少光影色彩/时间信息"})
-        user_prompt = str(row.get("prompt_positive", ""))
+        user_prompt = prompt_positive
         user_negative = str(row.get("prompt_negative", ""))
         if user_prompt:
             for flag in _quality_flags(user_prompt, user_negative):
@@ -493,6 +511,9 @@ def generate_manju_image(body: ManjuImageGenerateRequest):
     provider = (body.provider or config.get("provider", "openai")).strip().lower()
     if body.provider:
         config = {**config, "provider": provider}
+    # 注入 config_name 给 _record_image_usage 上报用
+    if body.image_config_name and "config_name" not in config:
+        config = {**config, "config_name": body.image_config_name}
     prompt = _resolve_image_prompt(body)
     config = normalize_image_config(config)
     # A4: 与 ImageView 派发共用 images_dir(filepath) 而非 manju 工作目录，
@@ -543,7 +564,7 @@ def generate_characters(body: ManjuGenerateRequest):
         async for chunk in run_with_sse(
             _generate_characters_sync,
             body.llm_config_name, body.filepath, body.start_chapter, body.end_chapter,
-            body.visual_style, body.extra_guidance,
+            body.visual_style, body.extra_guidance, body.full_scan,
         ):
             yield chunk
     return _sse_response(_gen())
@@ -555,7 +576,7 @@ def generate_scenes(body: ManjuGenerateRequest):
         async for chunk in run_with_sse(
             _generate_scenes_sync,
             body.llm_config_name, body.filepath, body.start_chapter, body.end_chapter,
-            body.visual_style, body.extra_guidance,
+            body.visual_style, body.extra_guidance, body.full_scan,
         ):
             yield chunk
     return _sse_response(_gen())
